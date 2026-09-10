@@ -1,4 +1,4 @@
-# python
+# Python Scripts
 Helpful scripts in Python (made via chatGPT) <br>
 Working on macOS 26.6.2, Python 3.13.14
 
