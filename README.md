@@ -1,5 +1,5 @@
 # python
-Helpful scripts in Python
+Helpful scripts in Python (made via chatGPT)
 
 WebViewerEditor2.py reads a bookmark.html file, dedupes entries. Allows for check validation (404) and removal of those sites, plus json file saving state
 
