@@ -1,0 +1,5 @@
+AppKit==0.2.8
+Foundation==0.1.0a0.dev1
+pyobjc_core==12.2.2
+pyobjc_framework_cocoa==12.2.2
+pyobjc_framework_webkit==12.2.2
