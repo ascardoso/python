@@ -1,5 +1,6 @@
-# python
-Helpful scripts in Python (made via chatGPT) Working on macOS
+# Python Scripts
+Helpful scripts in Python (made via chatGPT) <br>
+Working on macOS 26.6.2, Python 3.13.14
 
 <b>WebViewerEditor2.py</b> reads a bookmark.html file, dedupes entries. Allows for check validation (404) and removal of those sites, plus json file saving state
 
