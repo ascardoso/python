@@ -27,7 +27,7 @@ except ImportError:
     print("ERROR: pytypedstream is not installed.")
     print()
     print("Install it with:")
-    print("  ~/message-export-venv/bin/pip install pytypedstream")
+    print("pip install pytypedstream")
     print()
     sys.exit(1)
 
