@@ -1,5 +1,16 @@
 #!/usr/bin/env python3
 
+# It's a lightweight Windows/macOS/Linux-style file browser written in Python that lets 
+# you select a folder, browse its files recursively, sort them, and preview supported text, 
+# RTF, and image files without editing them.
+
+# One technical issue I'd flag: the program recursively scans the entire selected directory 
+# immediately. For a directory containing a very large number of files or deeply nested 
+# folders, populate_directory() could make the UI slow or temporarily unresponsive. 
+
+# It also doesn't protect against symlink-related recursion, 
+# depending on how entry.is_dir() behaves for links on the platform.
+
 import os
 import sys
 
