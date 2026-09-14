@@ -10,4 +10,4 @@ Working on macOS 26.6.2, Python 3.13.14
 
    Run with --all or a given contact.
 
-   To run these scripts from terminal place them in a folder that is in PATH and run 'chmod +x <script>
+   To run these scripts from terminal place them in a folder that is in PATH and run 'chmod +x <script>'
