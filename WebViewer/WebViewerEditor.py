@@ -4,7 +4,7 @@
 Safari Bookmark Browser / Cleaner
 
 Usage:
-    python3 bookmark_browser.py bookmarks.html
+    python3 WebViewEditor.py bookmarks.html
 
 Required:
     Python 3
