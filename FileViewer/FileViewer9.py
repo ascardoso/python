@@ -1,5 +1,31 @@
 #!/usr/bin/env python3
 
+# =========================================================
+# File Viewer
+# =========================================================
+#
+# Lightweight Windows/macOS/Linux-style file browser written
+# in Python using PySide6.
+#
+# Features:
+#
+#   - Select a directory
+#   - Browse files recursively
+#   - Sort by name or date modified
+#   - Preview text/source files
+#   - Preview RTF files
+#   - Preview images
+#   - Find text in the right-hand viewer
+#   - Find Next with F3
+#   - Optional editing mode
+#   - Save
+#   - Save As
+#   - Unsaved-change protection
+#   - Font size controls
+#   - Reload selected files from disk
+#
+# =========================================================
+
 import os
 import sys
 
