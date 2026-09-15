@@ -10,4 +10,7 @@ Working on macOS 26.6.2, Python 3.13.14
 
    Run with --all or a given contact.
 
-   To run these scripts from terminal place them in a folder that is in PATH and run 'chmod +x <script>'
+<b>Spectrogram.py</b> Loads a WAV recording and analyzes its audio spectrum to find the fundamental frequency (F₀) and harmonics.
+And displays a large spectrogram, FFT spectrum, and numbered harmonic frequencies for visual analysis.   
+
+***  To run these scripts from terminal place them in a folder that is in PATH and run 'chmod +x <script>'
