@@ -6,9 +6,7 @@ Working on macOS 26.6.2, Python 3.13.14
 
 <b>FileViewer.py</b> Asks for a folder to be opened/selected, then lists all files on its left pane, selecting one will display its contents. Editing, search and sorting enabled. Supports .txt, .rtf, .rtfd, .png, .jpg and other text and image files
 
-<b>ExportMessages.py</b> is a macOS utility that reads the local Apple Messages `chat.db` database and exports conversations to human-readable text files. It can identify contacts/conversations, recover message text (including `NSAttributedString` content via `pytypedstream`), preserve dates and sender names, and export associated attachments when their local files can be resolved. 
-
-   Run with --all or a given contact.
+<b>ExportMessages.py</b> is a macOS utility that reads the local Apple Messages `chat.db` database and exports conversations to human-readable text files. It can identify contacts/conversations, recover message text (including `NSAttributedString` content via `pytypedstream`), preserve dates and sender names, and export associated attachments when their local files can be resolved. Run with --all or a given contact.
 
 <b>Spectrogram.py</b> Loads a WAV recording and analyzes its audio spectrum to find the fundamental frequency (F₀) and harmonics.
 And displays a large spectrogram, FFT spectrum, and numbered harmonic frequencies for visual analysis.   
