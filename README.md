@@ -2,8 +2,8 @@
 Helpful scripts in Python (made via chatGPT) <br>
 Working on macOS 26.6.2, Python 3.13.14
 
-Make sure requirements are fulfilled 
-<p>pip install -r /path/to/requirements.txt
+***  Make sure requirements are fulfilled 
+<p>pip3 install -r /path/to/requirements.txt
 
 <b>WebViewerEditor.py</b> reads a bookmark.html file, de-dupes entries. Selecting one will display its contents. Allows for check validation (404) and removal of those sites, plus using a Json-file to save state (working site or not)
 
