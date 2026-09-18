@@ -14,4 +14,7 @@ Working on macOS 26.6.2, Python 3.13.14
 <b>. Spectrogram.py</b> Loads a WAV recording and analyzes its audio spectrum to find the fundamental frequency (F₀) and harmonics.
 And displays a large spectrogram, FFT spectrum, and numbered harmonic frequencies for visual analysis.   
 
+<b>. Outliner.py</b> An hierarchical thread/outliner app built with PySide6, letting you create, edit, reorder, indent, and outdent nested threads. It autosaves the hierarchy to a JSON file, preserving each thread’s title, text, ID, and children.
+
+
 ***  To run these scripts from terminal place them in a folder that is in PATH and run 'chmod +x <script>'
