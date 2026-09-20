@@ -22,17 +22,24 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-"""
-
-"""
 
 Hierarchical threaded outliner with autosave.
 
-An hierarchical thread/outliner app built with PySide6, 
+An hierarchical thread/outliner app built with PySide6,
 letting you create, edit, reorder, indent, and outdent nested threads.
-It autosaves the hierarchy to a JSON file, preserving each thread’s title, 
+It autosaves the hierarchy to a JSON file, preserving each thread’s title,
 text, ID, and children.
 
+The application also supports multiple outline files through:
+
+    File -> New
+    File -> Open
+    File -> Save
+    File -> Save As
+    File -> Print Outline
+
+Printing includes the complete outline, including all nested threads
+and their associated text.
 """
 
 from __future__ import annotations
@@ -41,13 +48,34 @@ import argparse
 import json
 import sys
 import uuid
+import math
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QAction, QKeySequence
+from PySide6.QtCore import (
+    Qt,
+    QTimer,
+    QMarginsF,
+)
+
+from PySide6.QtGui import (
+    QAction,
+    QKeySequence,
+    QPageLayout,
+    QPageSize,
+    QTextDocument,
+    QPainter,
+    QAbstractTextDocumentLayout,
+)
+
+from PySide6.QtPrintSupport import (
+    QPrinter,
+    QPrintDialog,
+)
+
 from PySide6.QtWidgets import (
     QApplication,
+    QFileDialog,
     QHBoxLayout,
     QLabel,
     QMainWindow,
@@ -62,14 +90,16 @@ from PySide6.QtWidgets import (
     QInputDialog,
 )
 
-
-DEFAULT_DATA_PATH = Path.home() / ".thread_outliner.json"
+DEFAULT_DATA_PATH = (
+    Path.home() / ".thread_outliner.json"
+)
 
 
 def new_node(
     title: str = "New thread",
     text: str = "",
 ) -> dict[str, Any]:
+
     return {
         "id": str(uuid.uuid4()),
         "title": title,
@@ -80,32 +110,55 @@ def new_node(
 
 class ThreadOutliner(QMainWindow):
 
-    def __init__(self, data_path: Path):
+    def __init__(
+        self,
+        data_path: Path,
+    ):
+
         super().__init__()
 
         self.data_path = data_path
-        self.nodes: list[dict[str, Any]] = []
+
+        self.nodes: list[
+            dict[str, Any]
+        ] = []
+
         self._loading = False
 
         self._save_timer = QTimer(self)
         self._save_timer.setSingleShot(True)
         self._save_timer.setInterval(450)
-        self._save_timer.timeout.connect(self.save_data)
 
-        self.setWindowTitle("Thread Outliner")
-        self.resize(1150, 760)
+        self._save_timer.timeout.connect(
+            self.save_data
+        )
+
+        self.setWindowTitle(
+            "Thread Outliner"
+        )
+
+        self.resize(
+            1150,
+            760
+        )
 
         self._build_ui()
+
         self._load_data()
 
         if not self.nodes:
-            self.nodes = [new_node()]
+
+            self.nodes = [
+                new_node()
+            ]
 
         self._rebuild_tree(
             select_id=self.nodes[0]["id"]
         )
 
         self._make_menus()
+
+        self._update_window_title()
 
         print("=" * 60)
         print("THREAD OUTLINER STARTED")
@@ -117,33 +170,85 @@ class ThreadOutliner(QMainWindow):
         )
 
     # ================================================================
+    # Window title
+    # ================================================================
+
+    def _update_window_title(self):
+
+        filename = self.data_path.name
+
+        self.setWindowTitle(
+            f"Thread Outliner - {filename}"
+        )
+
+    # ================================================================
     # UI
     # ================================================================
 
     def _build_ui(self):
+
         central = QWidget()
-        layout = QVBoxLayout(central)
+
+        layout = QVBoxLayout(
+            central
+        )
 
         toolbar = QHBoxLayout()
 
         actions = [
-            ("＋ Thread", self.add_sibling),
-            ("＋ Subthread", self.add_child),
-            ("↑", self.move_up),
-            ("↓", self.move_down),
-            ("Indent →", self.indent),
-            ("← Outdent", self.outdent),
-            ("Rename", self.rename_selected),
-            ("Delete", self.delete_selected),
+            (
+                "＋ Thread",
+                self.add_sibling,
+            ),
+            (
+                "＋ Subthread",
+                self.add_child,
+            ),
+            (
+                "↑",
+                self.move_up,
+            ),
+            (
+                "↓",
+                self.move_down,
+            ),
+            (
+                "Indent →",
+                self.indent,
+            ),
+            (
+                "← Outdent",
+                self.outdent,
+            ),
+            (
+                "Rename",
+                self.rename_selected,
+            ),
+            (
+                "Delete",
+                self.delete_selected,
+            ),
         ]
 
         for label, callback in actions:
-            button = QPushButton(label)
-            button.clicked.connect(callback)
-            toolbar.addWidget(button)
+
+            button = QPushButton(
+                label
+            )
+
+            button.clicked.connect(
+                callback
+            )
+
+            toolbar.addWidget(
+                button
+            )
 
         toolbar.addStretch(1)
-        layout.addLayout(toolbar)
+
+        layout.addLayout(
+            toolbar
+        )
 
         # ------------------------------------------------------------
         # Left / tree
@@ -154,9 +259,16 @@ class ThreadOutliner(QMainWindow):
         )
 
         left = QWidget()
-        left_layout = QVBoxLayout(left)
+
+        left_layout = QVBoxLayout(
+            left
+        )
+
         left_layout.setContentsMargins(
-            0, 0, 6, 0
+            0,
+            0,
+            6,
+            0
         )
 
         left_layout.addWidget(
@@ -164,18 +276,30 @@ class ThreadOutliner(QMainWindow):
         )
 
         self.tree = QTreeWidget()
-        self.tree.setHeaderHidden(True)
-        self.tree.setWordWrap(True)
+
+        self.tree.setHeaderHidden(
+            True
+        )
+
+        self.tree.setWordWrap(
+            True
+        )
+
         self.tree.setTextElideMode(
             Qt.TextElideMode.ElideNone
         )
+
         self.tree.setHorizontalScrollBarPolicy(
             Qt.ScrollBarPolicy.ScrollBarAsNeeded
         )
+
         self.tree.setVerticalScrollBarPolicy(
             Qt.ScrollBarPolicy.ScrollBarAsNeeded
         )
-        self.tree.setIndentation(22)
+
+        self.tree.setIndentation(
+            22
+        )
 
         self.tree.setStyleSheet("""
             QTreeWidget {
@@ -198,9 +322,16 @@ class ThreadOutliner(QMainWindow):
         # ------------------------------------------------------------
 
         right = QWidget()
-        right_layout = QVBoxLayout(right)
+
+        right_layout = QVBoxLayout(
+            right
+        )
+
         right_layout.setContentsMargins(
-            6, 0, 0, 0
+            6,
+            0,
+            0,
+            0
         )
 
         right_layout.addWidget(
@@ -208,11 +339,19 @@ class ThreadOutliner(QMainWindow):
         )
 
         self.title_edit = QTextEdit()
-        self.title_edit.setAcceptRichText(False)
+
+        self.title_edit.setAcceptRichText(
+            False
+        )
+
         self.title_edit.setPlaceholderText(
             "Thread title"
         )
-        self.title_edit.setFixedHeight(68)
+
+        self.title_edit.setFixedHeight(
+            68
+        )
+
         self.title_edit.setStyleSheet(
             "font-size: 18px; font-weight: 600;"
         )
@@ -226,7 +365,11 @@ class ThreadOutliner(QMainWindow):
         )
 
         self.body_edit = QTextEdit()
-        self.body_edit.setAcceptRichText(False)
+
+        self.body_edit.setAcceptRichText(
+            False
+        )
+
         self.body_edit.setPlaceholderText(
             "Write the text for this item…"
         )
@@ -236,19 +379,36 @@ class ThreadOutliner(QMainWindow):
             1
         )
 
-        splitter.addWidget(left)
-        splitter.addWidget(right)
+        splitter.addWidget(
+            left
+        )
 
-        splitter.setStretchFactor(0, 1)
-        splitter.setStretchFactor(1, 3)
-        splitter.setSizes([360, 790])
+        splitter.addWidget(
+            right
+        )
+
+        splitter.setStretchFactor(
+            0,
+            1
+        )
+
+        splitter.setStretchFactor(
+            1,
+            3
+        )
+
+        splitter.setSizes(
+            [360, 790]
+        )
 
         layout.addWidget(
             splitter,
             1
         )
 
-        self.setCentralWidget(central)
+        self.setCentralWidget(
+            central
+        )
 
         self.tree.currentItemChanged.connect(
             self._selection_changed
@@ -268,12 +428,62 @@ class ThreadOutliner(QMainWindow):
 
     def _make_menus(self):
 
+        # ------------------------------------------------------------
+        # File menu
+        # ------------------------------------------------------------
+
         file_menu = self.menuBar().addMenu(
             "&File"
         )
 
+        # ------------------------------------------------------------
+        # New
+        # ------------------------------------------------------------
+
+        new = QAction(
+            "&New",
+            self
+        )
+
+        new.setShortcut(
+            QKeySequence.StandardKey.New
+        )
+
+        new.triggered.connect(
+            self.new_outline
+        )
+
+        file_menu.addAction(
+            new
+        )
+
+        # ------------------------------------------------------------
+        # Open
+        # ------------------------------------------------------------
+
+        open_action = QAction(
+            "&Open...",
+            self
+        )
+
+        open_action.setShortcut(
+            QKeySequence.StandardKey.Open
+        )
+
+        open_action.triggered.connect(
+            self.open_outline
+        )
+
+        file_menu.addAction(
+            open_action
+        )
+
+        # ------------------------------------------------------------
+        # Save
+        # ------------------------------------------------------------
+
         save = QAction(
-            "&Save now",
+            "&Save",
             self
         )
 
@@ -285,22 +495,84 @@ class ThreadOutliner(QMainWindow):
             self.save_data
         )
 
-        file_menu.addAction(save)
+        file_menu.addAction(
+            save
+        )
 
-        new = QAction(
+        # ------------------------------------------------------------
+        # Save As
+        # ------------------------------------------------------------
+
+        save_as = QAction(
+            "Save &As...",
+            self
+        )
+
+        save_as.setShortcut(
+            QKeySequence(
+                "Ctrl+Shift+S"
+            )
+        )
+
+        save_as.triggered.connect(
+            self.save_as
+        )
+
+        file_menu.addAction(
+            save_as
+        )
+
+        file_menu.addSeparator()
+
+        # ------------------------------------------------------------
+        # Print
+        # ------------------------------------------------------------
+
+        print_action = QAction(
+            "&Print Outline...",
+            self
+        )
+
+        print_action.setShortcut(
+            QKeySequence.StandardKey.Print
+        )
+
+        print_action.triggered.connect(
+            self.print_outline
+        )
+
+        file_menu.addAction(
+            print_action
+        )
+
+        file_menu.addSeparator()
+
+        # ------------------------------------------------------------
+        # Existing new sibling action
+        # ------------------------------------------------------------
+
+        new_sibling = QAction(
             "New &sibling",
             self
         )
 
-        new.setShortcut(
-            QKeySequence.StandardKey.New
+        new_sibling.setShortcut(
+            QKeySequence(
+                "Ctrl+Alt+N"
+            )
         )
 
-        new.triggered.connect(
+        new_sibling.triggered.connect(
             self.add_sibling
         )
 
-        file_menu.addAction(new)
+        file_menu.addAction(
+            new_sibling
+        )
+
+        # ------------------------------------------------------------
+        # Outline menu
+        # ------------------------------------------------------------
 
         edit = self.menuBar().addMenu(
             "&Outline"
@@ -352,14 +624,18 @@ class ThreadOutliner(QMainWindow):
             )
 
             action.setShortcut(
-                QKeySequence(shortcut)
+                QKeySequence(
+                    shortcut
+                )
             )
 
             action.triggered.connect(
                 callback
             )
 
-            edit.addAction(action)
+            edit.addAction(
+                action
+            )
 
     # ================================================================
     # Debugging
@@ -369,6 +645,7 @@ class ThreadOutliner(QMainWindow):
         self,
         label: str
     ):
+
         print()
         print("=" * 60)
         print(label)
@@ -390,7 +667,10 @@ class ThreadOutliner(QMainWindow):
         print()
         print("VISIBLE QT TREE:")
 
-        def walk(item, depth=0):
+        def walk(
+            item,
+            depth=0
+        ):
 
             node_id = item.data(
                 0,
@@ -406,6 +686,7 @@ class ThreadOutliner(QMainWindow):
             for i in range(
                 item.childCount()
             ):
+
                 walk(
                     item.child(i),
                     depth + 1
@@ -414,6 +695,7 @@ class ThreadOutliner(QMainWindow):
         for i in range(
             self.tree.topLevelItemCount()
         ):
+
             walk(
                 self.tree.topLevelItem(i)
             )
@@ -425,6 +707,8 @@ class ThreadOutliner(QMainWindow):
     # ================================================================
 
     def _load_data(self):
+
+        self.nodes = []
 
         if not self.data_path.exists():
 
@@ -457,8 +741,16 @@ class ThreadOutliner(QMainWindow):
             self.nodes = [
                 self._normalize_node(node)
                 for node in raw_nodes
-                if isinstance(node, dict)
+                if isinstance(
+                    node,
+                    dict
+                )
             ]
+
+            print(
+                f"Loaded {len(self.nodes)} "
+                f"top-level thread(s)"
+            )
 
         except (
             OSError,
@@ -474,7 +766,14 @@ class ThreadOutliner(QMainWindow):
                 "Starting a new outline."
             )
 
-    def _normalize_node(self, raw):
+            print(
+                f"LOAD ERROR: {exc}"
+            )
+
+    def _normalize_node(
+        self,
+        raw
+    ):
 
         node = new_node(
             str(
@@ -504,10 +803,222 @@ class ThreadOutliner(QMainWindow):
         node["children"] = [
             self._normalize_node(child)
             for child in children
-            if isinstance(child, dict)
+            if isinstance(
+                child,
+                dict
+            )
         ]
 
         return node
+
+    # ================================================================
+    # New outline
+    # ================================================================
+
+    def new_outline(self):
+
+        print()
+        print("#" * 60)
+        print("NEW OUTLINE")
+        print("#" * 60)
+
+        answer = QMessageBox.question(
+            self,
+            "New outline",
+            "Create a new outline?\n\n"
+            "The current outline will remain saved "
+            "under its existing file.",
+            QMessageBox.StandardButton.Yes
+            | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+
+        if (
+            answer
+            != QMessageBox.StandardButton.Yes
+        ):
+
+            return
+
+        self._save_timer.stop()
+
+        self.nodes = [
+            new_node()
+        ]
+
+        # A new outline starts with a temporary path.
+        self.data_path = (
+            Path.home()
+            / "Untitled.json"
+        )
+
+        self._rebuild_tree(
+            select_id=self.nodes[0]["id"]
+        )
+
+        self._update_window_title()
+
+        self.statusBar().showMessage(
+            "New outline created.",
+            2500
+        )
+
+        self._debug_print_hierarchy(
+            "NEW OUTLINE HIERARCHY"
+        )
+
+    # ================================================================
+    # Open outline
+    # ================================================================
+
+    def open_outline(self):
+
+        print()
+        print("#" * 60)
+        print("OPEN OUTLINE")
+        print("#" * 60)
+
+        filename, selected_filter = (
+            QFileDialog.getOpenFileName(
+                self,
+                "Open Outline",
+                str(self.data_path.parent),
+                "Outline JSON (*.json);;All Files (*)",
+            )
+        )
+
+        if not filename:
+
+            print(
+                "OPEN: cancelled"
+            )
+
+            return
+
+        path = Path(
+            filename
+        ).expanduser().resolve()
+
+        print(
+            f"OPEN: selected file: {path}"
+        )
+
+        # Stop any pending autosave for the old outline.
+        self._save_timer.stop()
+
+        self.data_path = path
+
+        self._load_data()
+
+        if not self.nodes:
+
+            self.nodes = [
+                new_node()
+            ]
+
+        self._rebuild_tree(
+            select_id=self.nodes[0]["id"]
+        )
+
+        self._update_window_title()
+
+        print(
+            f"OPEN: successfully loaded: "
+            f"{self.data_path}"
+        )
+
+        self._debug_print_hierarchy(
+            "OPENED OUTLINE"
+        )
+
+        self.statusBar().showMessage(
+            f"Opened {self.data_path}",
+            2500
+        )
+
+    # ================================================================
+    # Save As
+    # ================================================================
+
+    def save_as(self):
+
+        print()
+        print("#" * 60)
+        print("SAVE AS")
+        print("#" * 60)
+
+        self._commit_editor()
+
+        filename, selected_filter = (
+            QFileDialog.getSaveFileName(
+                self,
+                "Save Outline As",
+                str(self.data_path),
+                "Outline JSON (*.json);;All Files (*)",
+            )
+        )
+
+        if not filename:
+
+            print(
+                "SAVE AS: cancelled"
+            )
+
+            return False
+
+        path = Path(
+            filename
+        ).expanduser().resolve()
+
+        # ------------------------------------------------------------
+        # Add .json if the user did not provide an extension.
+        # ------------------------------------------------------------
+
+        if not path.suffix:
+
+            path = path.with_suffix(
+                ".json"
+            )
+
+        print(
+            f"SAVE AS: destination: {path}"
+        )
+
+        old_path = self.data_path
+
+        self.data_path = path
+
+        success = self._write_data()
+
+        if success:
+
+            self._update_window_title()
+
+            self.statusBar().showMessage(
+                f"Saved as {self.data_path}",
+                3000
+            )
+
+            print(
+                "SAVE AS: successful"
+            )
+
+            return True
+
+        # ------------------------------------------------------------
+        # Restore old path if Save As failed.
+        # ------------------------------------------------------------
+
+        self.data_path = old_path
+
+        self._update_window_title()
+
+        print(
+            "SAVE AS: failed; "
+            "restored previous data path"
+        )
+
+        return False
 
     # ================================================================
     # Find node
@@ -532,7 +1043,9 @@ class ThreadOutliner(QMainWindow):
             else nodes
         )
 
-        for index, node in enumerate(nodes):
+        for index, node in enumerate(
+            nodes
+        ):
 
             if node["id"] == node_id:
 
@@ -548,6 +1061,7 @@ class ThreadOutliner(QMainWindow):
             )
 
             if result:
+
                 return result
 
         return None
@@ -576,7 +1090,9 @@ class ThreadOutliner(QMainWindow):
             f"id={node_id}"
         )
 
-        result = self._find(node_id)
+        result = self._find(
+            node_id
+        )
 
         if result:
 
@@ -651,7 +1167,9 @@ class ThreadOutliner(QMainWindow):
             else nodes
         )
 
-        for parent_index, node in enumerate(nodes):
+        for parent_index, node in enumerate(
+            nodes
+        ):
 
             # First check whether the requested node is
             # a direct child of this node.
@@ -686,6 +1204,7 @@ class ThreadOutliner(QMainWindow):
             )
 
             if result:
+
                 return result
 
         return None
@@ -706,7 +1225,9 @@ class ThreadOutliner(QMainWindow):
 
         self._loading = True
 
-        self.tree.setUpdatesEnabled(False)
+        self.tree.setUpdatesEnabled(
+            False
+        )
 
         try:
 
@@ -763,12 +1284,18 @@ class ThreadOutliner(QMainWindow):
                         item
                     )
 
-                    item.setExpanded(True)
+                    item.setExpanded(
+                        True
+                    )
 
-            add_nodes(self.nodes)
+            add_nodes(
+                self.nodes
+            )
 
             target = (
-                self._item_for_id(select_id)
+                self._item_for_id(
+                    select_id
+                )
                 if select_id
                 else None
             )
@@ -792,10 +1319,14 @@ class ThreadOutliner(QMainWindow):
 
         finally:
 
-            self.tree.setUpdatesEnabled(True)
+            self.tree.setUpdatesEnabled(
+                True
+            )
 
         self.tree.doItemsLayout()
+
         self.tree.viewport().update()
+
         self.tree.viewport().repaint()
 
         self._loading = False
@@ -810,6 +1341,7 @@ class ThreadOutliner(QMainWindow):
     ):
 
         if not node_id:
+
             return None
 
         stack = [
@@ -854,9 +1386,12 @@ class ThreadOutliner(QMainWindow):
     ):
 
         if not self._loading:
+
             self._load_editor_from_selection()
 
-    def _load_editor_from_selection(self):
+    def _load_editor_from_selection(
+        self
+    ):
 
         found = self._selected_node()
 
@@ -893,6 +1428,7 @@ class ThreadOutliner(QMainWindow):
         else:
 
             self.title_edit.clear()
+
             self.body_edit.clear()
 
         self._loading = False
@@ -900,11 +1436,13 @@ class ThreadOutliner(QMainWindow):
     def _editor_changed(self):
 
         if self._loading:
+
             return
 
         found = self._selected_node()
 
         if not found:
+
             return
 
         node = found[0]
@@ -978,13 +1516,17 @@ class ThreadOutliner(QMainWindow):
         else:
 
             node = new_node()
-            self.nodes.append(node)
+
+            self.nodes.append(
+                node
+            )
 
         self._rebuild_tree(
             select_id=node["id"]
         )
 
         self.title_edit.setFocus()
+
         self.title_edit.selectAll()
 
         self._schedule_save()
@@ -1002,6 +1544,7 @@ class ThreadOutliner(QMainWindow):
         if not found:
 
             self.add_sibling()
+
             return
 
         parent = found[0]
@@ -1017,6 +1560,7 @@ class ThreadOutliner(QMainWindow):
         )
 
         self.title_edit.setFocus()
+
         self.title_edit.selectAll()
 
         self._schedule_save()
@@ -1026,10 +1570,16 @@ class ThreadOutliner(QMainWindow):
     # ================================================================
 
     def move_up(self):
-        self._move_sibling(-1)
+
+        self._move_sibling(
+            -1
+        )
 
     def move_down(self):
-        self._move_sibling(1)
+
+        self._move_sibling(
+            1
+        )
 
     def _move_sibling(
         self,
@@ -1039,6 +1589,7 @@ class ThreadOutliner(QMainWindow):
         found = self._selected_node()
 
         if not found:
+
             return
 
         node, siblings, index = found
@@ -1048,6 +1599,7 @@ class ThreadOutliner(QMainWindow):
         if not (
             0 <= new_index < len(siblings)
         ):
+
             return
 
         self._commit_editor()
@@ -1093,6 +1645,7 @@ class ThreadOutliner(QMainWindow):
         found = self._selected_node()
 
         if not found:
+
             return
 
         node, siblings, index = found
@@ -1108,14 +1661,18 @@ class ThreadOutliner(QMainWindow):
 
         self._commit_editor()
 
-        parent = siblings[index - 1]
+        parent = siblings[
+            index - 1
+        ]
 
         print(
             f"INDENT: moving '{node['title']}' "
             f"under '{parent['title']}'"
         )
 
-        moved_node = siblings.pop(index)
+        moved_node = siblings.pop(
+            index
+        )
 
         parent["children"].append(
             moved_node
@@ -1345,17 +1902,20 @@ class ThreadOutliner(QMainWindow):
         found = self._selected_node()
 
         if not found:
+
             return
 
         node = found[0]
 
-        title, accepted = QInputDialog.getText(
-            self,
-            "Rename thread",
-            "Title:",
-            text=node.get(
-                "title",
-                ""
+        title, accepted = (
+            QInputDialog.getText(
+                self,
+                "Rename thread",
+                "Title:",
+                text=node.get(
+                    "title",
+                    ""
+                )
             )
         )
 
@@ -1381,6 +1941,7 @@ class ThreadOutliner(QMainWindow):
         found = self._selected_node()
 
         if not found:
+
             return
 
         node, siblings, index = found
@@ -1406,13 +1967,17 @@ class ThreadOutliner(QMainWindow):
             answer
             != QMessageBox.StandardButton.Yes
         ):
+
             return
 
         self._commit_editor()
 
-        siblings.pop(index)
+        siblings.pop(
+            index
+        )
 
         if not self.nodes:
+
             self.nodes.append(
                 new_node()
             )
@@ -1452,11 +2017,11 @@ class ThreadOutliner(QMainWindow):
 
         self._save_timer.start()
 
-    def save_data(self):
+    def _write_data(self):
 
         print()
         print("#" * 60)
-        print("SAVE_DATA CALLED")
+        print("WRITE_DATA CALLED")
         print("#" * 60)
 
         self._commit_editor()
@@ -1473,7 +2038,8 @@ class ThreadOutliner(QMainWindow):
             )
 
             temp = self.data_path.with_suffix(
-                self.data_path.suffix + ".tmp"
+                self.data_path.suffix
+                + ".tmp"
             )
 
             serialized = json.dumps(
@@ -1514,6 +2080,8 @@ class ThreadOutliner(QMainWindow):
                 2500
             )
 
+            return True
+
         except OSError as exc:
 
             print(
@@ -1525,6 +2093,543 @@ class ThreadOutliner(QMainWindow):
                 "Save failed",
                 f"Could not save outline:\n{exc}"
             )
+
+            return False
+
+    def save_data(self):
+
+        print()
+        print("#" * 60)
+        print("SAVE_DATA CALLED")
+        print("#" * 60)
+
+        self._write_data()
+
+    # ================================================================
+    # Printing
+    # ================================================================
+
+    def _escape_print_html(
+        self,
+        text: str
+    ) -> str:
+        """
+        Convert plain text to HTML-safe text for printing.
+        """
+
+        from html import escape
+
+        return escape(
+            text,
+            quote=False
+        ).replace(
+            "\n",
+            "<br>"
+        )
+
+    def _build_print_html(self):
+
+        print()
+        print("#" * 60)
+        print("BUILDING PRINT DOCUMENT")
+        print("#" * 60)
+
+        self._commit_editor()
+
+        lines = []
+
+        lines.append(
+            "<html>"
+        )
+
+        lines.append(
+            "<head>"
+        )
+
+        lines.append(
+            """
+            <style>
+                body {
+                    font-family: Arial, Helvetica, sans-serif;
+                    font-size: 11pt;
+                    color: #000000;
+                }
+
+                h1 {
+                    font-size: 22pt;
+                    margin-bottom: 4px;
+                }
+
+                h2 {
+                    font-size: 16pt;
+                    margin-top: 18px;
+                    margin-bottom: 6px;
+                    border-bottom: 1px solid #888888;
+                }
+
+                h3 {
+                    font-size: 13pt;
+                    margin-top: 14px;
+                    margin-bottom: 5px;
+                }
+
+                .path {
+                    color: #555555;
+                    font-size: 9pt;
+                    margin-bottom: 20px;
+                }
+
+                .thread {
+                    margin-left: 0px;
+                    margin-bottom: 14px;
+                }
+
+                .subthread {
+                    margin-left: 25px;
+                }
+
+                .title {
+                    font-weight: bold;
+                    font-size: 13pt;
+                }
+
+                .text {
+                    margin-top: 5px;
+                    line-height: 1.35;
+                }
+
+                .separator {
+                    border-bottom: 1px solid #cccccc;
+                    margin-top: 10px;
+                    margin-bottom: 10px;
+                }
+            </style>
+            """
+        )
+
+        lines.append(
+            "</head>"
+        )
+
+        lines.append(
+            "<body>"
+        )
+
+        lines.append(
+            "<h1>Thread Outliner</h1>"
+        )
+
+        lines.append(
+            "<div class='path'>"
+            + self._escape_print_html(
+                str(self.data_path)
+            )
+            + "</div>"
+        )
+
+        def add_nodes(
+            nodes,
+            depth=0
+        ):
+
+            for node in nodes:
+
+                title = (
+                    str(
+                        node.get(
+                            "title",
+                            ""
+                        )
+                    ).strip()
+                    or "Untitled"
+                )
+
+                text = str(
+                    node.get(
+                        "text",
+                        ""
+                    )
+                )
+
+                css_class = (
+                    "thread"
+                    if depth == 0
+                    else "subthread"
+                )
+
+                lines.append(
+                    f"<div class='{css_class}'>"
+                )
+
+                if depth == 0:
+
+                    lines.append(
+                        "<h2>"
+                        + self._escape_print_html(
+                            title
+                        )
+                        + "</h2>"
+                    )
+
+                else:
+
+                    heading_level = min(
+                        depth + 2,
+                        6
+                    )
+
+                    lines.append(
+                        f"<h{heading_level}>"
+                        + self._escape_print_html(
+                            title
+                        )
+                        + f"</h{heading_level}>"
+                    )
+
+                if text:
+
+                    lines.append(
+                        "<div class='text'>"
+                        + self._escape_print_html(
+                            text
+                        )
+                        + "</div>"
+                    )
+
+                lines.append(
+                    "</div>"
+                )
+
+                add_nodes(
+                    node.get(
+                        "children",
+                        []
+                    ),
+                    depth + 1
+                )
+
+        add_nodes(
+            self.nodes
+        )
+
+        lines.append(
+            "</body>"
+        )
+
+        lines.append(
+            "</html>"
+        )
+
+        html = "\n".join(
+            lines
+        )
+
+        print(
+            f"PRINT: generated HTML "
+            f"with {len(html)} characters"
+        )
+
+        return html
+
+    def print_outline(self):
+
+        print()
+        print("#" * 60)
+        print("PRINT OUTLINE")
+        print("#" * 60)
+
+        self._commit_editor()
+
+        self._debug_print_hierarchy(
+            "HIERARCHY BEING PRINTED"
+        )
+
+        # ------------------------------------------------------------
+        # Build printer.
+        # ------------------------------------------------------------
+
+        printer = QPrinter(
+            QPrinter.PrinterMode.HighResolution
+        )
+
+        # ------------------------------------------------------------
+        # Configure page layout.
+        # ------------------------------------------------------------
+
+        page_layout = QPageLayout(
+            QPageSize(
+                QPageSize.PageSizeId.Letter
+            ),
+            QPageLayout.Orientation.Portrait,
+            QMarginsF(
+                15,
+                15,
+                15,
+                15
+            ),
+            QPageLayout.Unit.Millimeter,
+        )
+
+        printer.setPageLayout(
+            page_layout
+        )
+
+        # ------------------------------------------------------------
+        # Show native print dialog.
+        # ------------------------------------------------------------
+
+        dialog = QPrintDialog(
+            printer,
+            self
+        )
+
+        dialog.setWindowTitle(
+            "Print Outline"
+        )
+
+        result = dialog.exec()
+
+        if result != QPrintDialog.DialogCode.Accepted:
+
+            print(
+                "PRINT: cancelled"
+            )
+
+            self.statusBar().showMessage(
+                "Printing cancelled.",
+                2000
+            )
+
+            return
+
+        print(
+            "PRINT: print dialog accepted"
+        )
+
+        # ------------------------------------------------------------
+        # Create QTextDocument containing the entire outline.
+        # ------------------------------------------------------------
+
+        document = QTextDocument()
+
+        document.setDocumentMargin(
+            0
+        )
+
+        html = self._build_print_html()
+
+        document.setHtml(
+            html
+        )
+
+        # ------------------------------------------------------------
+        # Print the complete document.
+        #
+        # PySide6 does not provide QTextDocument.print()
+        # in this environment, so render the document manually
+        # using QPainter and the document layout.
+        # ------------------------------------------------------------
+
+        print(
+            "PRINT: rendering document to printer..."
+        )
+
+        painter = QPainter()
+
+        try:
+
+            if not painter.begin(printer):
+
+                raise RuntimeError(
+                    "Could not start printer painter."
+                )
+
+            # --------------------------------------------------------
+            # Get the printable page rectangle in device pixels.
+            # --------------------------------------------------------
+
+            page_rect = printer.pageLayout().paintRectPixels(
+                printer.resolution()
+            )
+
+            print(
+                "PRINT: page rectangle:"
+            )
+
+            print(
+                f"  x = {page_rect.x()}"
+            )
+
+            print(
+                f"  y = {page_rect.y()}"
+            )
+
+            print(
+                f"  width = {page_rect.width()}"
+            )
+
+            print(
+                f"  height = {page_rect.height()}"
+            )
+
+            # --------------------------------------------------------
+            # Scale the QTextDocument to the printer resolution.
+            #
+            # QTextDocument uses points (1/72 inch), while the
+            # printer uses device pixels.
+            # --------------------------------------------------------
+
+            scale = (
+                printer.resolution()
+                / 72.0
+            )
+
+            painter.scale(
+                scale,
+                scale
+            )
+
+            # --------------------------------------------------------
+            # Determine the document width in document coordinates.
+            # --------------------------------------------------------
+
+            document_width = (
+                page_rect.width()
+                / scale
+            )
+
+            document.setTextWidth(
+                document_width
+            )
+
+            # --------------------------------------------------------
+            # Determine the page height in document coordinates.
+            # --------------------------------------------------------
+
+            page_height = (
+                page_rect.height()
+                / scale
+            )
+
+            # --------------------------------------------------------
+            # Render each page.
+            # --------------------------------------------------------
+
+            document_height = (
+                document.documentLayout()
+                .documentSize()
+                .height()
+            )
+
+            page_count = max(
+                1,
+                math.ceil(
+                    document_height / page_height
+                )
+            )
+
+            print(
+                f"PRINT: document height = "
+                f"{document_height:.2f}"
+            )
+
+            print(
+                f"PRINT: page height = "
+                f"{page_height:.2f}"
+            )
+
+            print(
+                f"PRINT: estimated page count = "
+                f"{page_count}"
+            )
+
+            for page in range(
+                page_count
+            ):
+
+                if page > 0:
+
+                    printer.newPage()
+
+                # ----------------------------------------------------
+                # Translate to the printable area.
+                # ----------------------------------------------------
+
+                painter.save()
+
+                painter.translate(
+                    page_rect.x() / scale,
+                    page_rect.y() / scale
+                )
+
+                # ----------------------------------------------------
+                # Clip to the current page.
+                # ----------------------------------------------------
+
+                painter.setClipRect(
+                    0,
+                    0,
+                    document_width,
+                    page_height
+                )
+
+                # ----------------------------------------------------
+                # Move the document upward for subsequent pages.
+                # ----------------------------------------------------
+
+                painter.translate(
+                    0,
+                    -page * page_height
+                )
+
+                # ----------------------------------------------------
+                # Paint the QTextDocument.
+                # ----------------------------------------------------
+
+                context = QAbstractTextDocumentLayout.PaintContext()
+
+                context.clip = painter.clipBoundingRect()
+
+                document.documentLayout().draw(
+                    painter,
+                    context
+                )
+
+                painter.restore()
+
+                print(
+                    f"PRINT: rendered page "
+                    f"{page + 1} of {page_count}"
+                )
+
+            painter.end()
+
+            print(
+                "PRINT: document successfully "
+                "sent to printer"
+            )
+
+            self.statusBar().showMessage(
+                f"Outline printed ({page_count} page(s)).",
+                2500
+            )
+
+        except Exception as exc:
+
+            if painter.isActive():
+
+                painter.end()
+
+            print(
+                f"PRINT ERROR: {exc}"
+            )
+
+            QMessageBox.warning(
+                self,
+                "Print failed",
+                f"Could not print outline:\n{exc}"
+            )
+
 
     # ================================================================
     # Close
@@ -1569,7 +2674,9 @@ def main():
     )
 
     data_path = (
-        Path(args.data_file)
+        Path(
+            args.data_file
+        )
         .expanduser()
         .resolve()
         if args.data_file
@@ -1577,7 +2684,10 @@ def main():
     )
 
     app = QApplication(
-        [sys.argv[0], *qt_args]
+        [
+            sys.argv[0],
+            *qt_args
+        ]
     )
 
     window = ThreadOutliner(
@@ -1590,5 +2700,7 @@ def main():
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(
+        main()
+    )
 
