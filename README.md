@@ -15,7 +15,7 @@ Working on macOS 26.6.2, Python 3.13.14
 And displays a large spectrogram, FFT spectrum, and numbered harmonic frequencies for visual analysis.   
 
 <b>. Outliner.py</b> lets you create, edit, organize, and save hierarchical threads with nested subthreads and associated text.
-It also supports opening, saving, and printing complete outlines, including all nested content..
+It also supports opening, saving, and printing complete outlines, including all nested content.
 
 
 ***  To run these scripts from terminal place them in a folder that is in PATH and run 'chmod +x <script>'
