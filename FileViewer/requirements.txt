@@ -2,5 +2,3 @@ pyside6==6.11.2
 pyside6_addons==6.11.2
 pyside6_essentials==6.11.2
 striprtf==0.0.33
-PyMuPDF>=1.24,<2
-
