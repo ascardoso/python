@@ -28,8 +28,8 @@ SOFTWARE.
 # File Viewer
 # =========================================================
 #
-# Lightweight Windows/macOS/Linux-style file browser written
-# in Python using PySide6.
+# Lightweight Windows/macOS/Linux-style file browser
+# written in Python using PySide6.
 #
 # Features:
 #
@@ -39,35 +39,72 @@ SOFTWARE.
 #   - Preview text/source files
 #   - Preview RTF files
 #   - Preview images
-#   - Find text in the right-hand viewer
+#   - Preview PDF files
+#   - Dedicated PDF toolbar
+#   - PDF previous/next/first/last page
+#   - PDF page number selector
+#   - PDF zoom in/out/reset
+#   - PDF fit-to-width
+#   - PDF fit-to-page
+#   - PDF single-page / continuous mode
+#   - PDF back/forward navigation history
+#   - Find text in the text viewer
 #   - Find Next with F3
 #   - Optional editing mode
 #   - Save
 #   - Save As
 #   - Unsaved-change protection
 #   - Font size controls
-#   - Reload selected files from disk
+#
+# Dependencies:
+#
+#   pip install PySide6 striprtf
+#
+# PDF support is provided by the QtPdf module included with
+# PySide6.
 #
 # =========================================================
+
 
 import os
 import sys
 
-from PySide6.QtCore import Qt
+
+from PySide6.QtCore import (
+    QPointF,
+    Qt,
+)
+
+
 from PySide6.QtGui import (
     QAction,
     QFont,
     QKeySequence,
     QPixmap,
 )
+
+
+from PySide6.QtPdf import (
+    QPdfDocument,
+)
+
+
+from PySide6.QtPdfWidgets import (
+    QPdfView,
+)
+
+
 from PySide6.QtWidgets import (
     QApplication,
+    QComboBox,
     QFileDialog,
     QLabel,
+    QLineEdit,
     QMainWindow,
     QMessageBox,
     QInputDialog,
     QScrollArea,
+    QSpinBox,
     QSplitter,
     QTextEdit,
     QToolBar,
@@ -81,6 +118,7 @@ from PySide6.QtWidgets import (
 # =========================================================
 # File types
 # =========================================================
+
 
 TEXT_EXTENSIONS = {
     ".txt",
@@ -119,6 +157,7 @@ TEXT_EXTENSIONS = {
     ".kt",
 }
 
+
 IMAGE_EXTENSIONS = {
     ".png",
     ".jpg",
@@ -130,23 +169,56 @@ IMAGE_EXTENSIONS = {
 }
 
 
+PDF_EXTENSIONS = {
+    ".pdf",
+}
+
+
 # =========================================================
 # File size limits
 # =========================================================
 
+
 MAX_TEXT_FILE_SIZE = 10 * 1024 * 1024
+
 MAX_RTF_FILE_SIZE = 20 * 1024 * 1024
+
 MAX_IMAGE_FILE_SIZE = 50 * 1024 * 1024
+
+MAX_PDF_FILE_SIZE = 250 * 1024 * 1024
 
 
 # =========================================================
 # Font settings
 # =========================================================
 
+
 DEFAULT_FONT_SIZE = 11
+
 MIN_FONT_SIZE = 6
+
 MAX_FONT_SIZE = 40
+
 FONT_SIZE_STEP = 1
+
+
+# =========================================================
+# PDF settings
+# =========================================================
+
+
+PDF_DEFAULT_ZOOM = 1.0
+
+PDF_MIN_ZOOM = 0.25
+
+PDF_MAX_ZOOM = 5.0
+
+PDF_ZOOM_STEP = 1.20
+
+
+# =========================================================
+# Main window
+# =========================================================
 
 
 class FileViewer(QMainWindow):
@@ -183,13 +255,8 @@ class FileViewer(QMainWindow):
 
         self.current_pixmap = None
 
-        # True while the program is loading a selection.
-        #
-        # This prevents currentItemChanged and itemClicked
-        # from both loading the same file.
         self.loading_file = False
 
-        # True when the user has enabled editing.
         self.editing_enabled = False
 
         # -------------------------------------------------
@@ -213,10 +280,94 @@ class FileViewer(QMainWindow):
         self.font_size = DEFAULT_FONT_SIZE
 
         # -------------------------------------------------
+        # PDF state
+        # -------------------------------------------------
+
+        self.pdf_document = QPdfDocument(
+            self
+        )
+
+        self.pdf_view = QPdfView()
+
+        self.pdf_view.setPageMode(
+            QPdfView.PageMode.MultiPage
+        )
+
+        self.pdf_view.setZoomMode(
+            QPdfView.ZoomMode.FitToWidth
+        )
+
+        self.pdf_view.setDocument(
+            self.pdf_document
+        )
+
+        self.pdf_toolbar = None
+
+        self.pdf_page_spin = None
+
+        self.pdf_zoom_label = None
+
+        self.pdf_zoom_combo = None
+
+        self.pdf_previous_action = None
+
+        self.pdf_next_action = None
+
+        self.pdf_first_action = None
+
+        self.pdf_last_action = None
+
+        self.pdf_back_action = None
+
+        self.pdf_forward_action = None
+
+        self.pdf_zoom_in_action = None
+
+        self.pdf_zoom_out_action = None
+
+        self.pdf_zoom_reset_action = None
+
+        self.pdf_fit_width_action = None
+
+        self.pdf_fit_page_action = None
+
+        self.pdf_single_page_action = None
+
+        self.pdf_continuous_action = None
+
+        # -------------------------------------------------
         # Build UI
         # -------------------------------------------------
 
         self.create_ui()
+
+        self.create_pdf_toolbar()
+
+        self.pdf_document.statusChanged.connect(
+            self.pdf_status_changed
+        )
+
+        self.pdf_view.pageNavigator().currentPageChanged.connect(
+            self.pdf_current_page_changed
+        )
+
+        self.pdf_view.pageNavigator().backAvailableChanged.connect(
+            self.pdf_navigation_state_changed
+        )
+
+        self.pdf_view.pageNavigator().forwardAvailableChanged.connect(
+            self.pdf_navigation_state_changed
+        )
+
+        self.pdf_view.zoomFactorChanged.connect(
+            self.pdf_zoom_changed
+        )
+
+        self.pdf_view.zoomModeChanged.connect(
+            self.pdf_zoom_mode_changed
+        )
+
+        self.update_pdf_toolbar_state()
 
 
     # =====================================================
@@ -228,7 +379,7 @@ class FileViewer(QMainWindow):
         self.create_menus()
 
         # -------------------------------------------------
-        # Toolbar
+        # Main toolbar
         # -------------------------------------------------
 
         toolbar = QToolBar(
@@ -283,7 +434,6 @@ class FileViewer(QMainWindow):
             True
         )
 
-        # One signal handles mouse and keyboard selection.
         self.tree.currentItemChanged.connect(
             self.file_selection_changed
         )
@@ -374,7 +524,13 @@ class FileViewer(QMainWindow):
             self.image_scroll
         )
 
+        viewer_layout.addWidget(
+            self.pdf_view
+        )
+
         self.image_scroll.hide()
+
+        self.pdf_view.hide()
 
         # -------------------------------------------------
         # Splitter
@@ -399,6 +555,287 @@ class FileViewer(QMainWindow):
         self.setCentralWidget(
             splitter
         )
+
+
+    # =====================================================
+    # PDF toolbar
+    # =====================================================
+
+    def create_pdf_toolbar(self):
+
+        toolbar = QToolBar(
+            "PDF Viewer"
+        )
+
+        toolbar.setMovable(
+            False
+        )
+
+        toolbar.setFloatable(
+            False
+        )
+
+        toolbar.setObjectName(
+            "PdfToolbar"
+        )
+
+        self.pdf_toolbar = toolbar
+
+        self.addToolBar(
+            Qt.TopToolBarArea,
+            toolbar
+        )
+
+        # -------------------------------------------------
+        # Navigation history
+        # -------------------------------------------------
+
+        self.pdf_back_action = toolbar.addAction(
+            "← Back"
+        )
+
+        self.pdf_back_action.setToolTip(
+            "Back in PDF navigation history"
+        )
+
+        self.pdf_back_action.triggered.connect(
+            self.pdf_go_back
+        )
+
+        self.pdf_forward_action = toolbar.addAction(
+            "Forward →"
+        )
+
+        self.pdf_forward_action.setToolTip(
+            "Forward in PDF navigation history"
+        )
+
+        self.pdf_forward_action.triggered.connect(
+            self.pdf_go_forward
+        )
+
+        toolbar.addSeparator()
+
+        # -------------------------------------------------
+        # Page navigation
+        # -------------------------------------------------
+
+        self.pdf_first_action = toolbar.addAction(
+            "⏮ First"
+        )
+
+        self.pdf_first_action.triggered.connect(
+            self.pdf_first_page
+        )
+
+        self.pdf_previous_action = toolbar.addAction(
+            "◀ Previous"
+        )
+
+        self.pdf_previous_action.triggered.connect(
+            self.pdf_previous_page
+        )
+
+        toolbar.addWidget(
+            QLabel("Page:")
+        )
+
+        self.pdf_page_spin = QSpinBox()
+
+        self.pdf_page_spin.setMinimum(
+            1
+        )
+
+        self.pdf_page_spin.setMaximum(
+            1
+        )
+
+        self.pdf_page_spin.setFixedWidth(
+            75
+        )
+
+        self.pdf_page_spin.setToolTip(
+            "PDF page number"
+        )
+
+        self.pdf_page_spin.valueChanged.connect(
+            self.pdf_page_spin_changed
+        )
+
+        toolbar.addWidget(
+            self.pdf_page_spin
+        )
+
+        self.pdf_page_count_label = QLabel(
+            "of 0"
+        )
+
+        toolbar.addWidget(
+            self.pdf_page_count_label
+        )
+
+        self.pdf_next_action = toolbar.addAction(
+            "Next ▶"
+        )
+
+        self.pdf_next_action.triggered.connect(
+            self.pdf_next_page
+        )
+
+        self.pdf_last_action = toolbar.addAction(
+            "Last ⏭"
+        )
+
+        self.pdf_last_action.triggered.connect(
+            self.pdf_last_page
+        )
+
+        toolbar.addSeparator()
+
+        # -------------------------------------------------
+        # Zoom
+        # -------------------------------------------------
+
+        self.pdf_zoom_out_action = toolbar.addAction(
+            "− Zoom Out"
+        )
+
+        self.pdf_zoom_out_action.setToolTip(
+            "Zoom out"
+        )
+
+        self.pdf_zoom_out_action.triggered.connect(
+            self.pdf_zoom_out
+        )
+
+        self.pdf_zoom_label = QLabel(
+            "Fit"
+        )
+
+        self.pdf_zoom_label.setMinimumWidth(
+            65
+        )
+
+        self.pdf_zoom_label.setAlignment(
+            Qt.AlignCenter
+        )
+
+        toolbar.addWidget(
+            self.pdf_zoom_label
+        )
+
+        self.pdf_zoom_in_action = toolbar.addAction(
+            "+ Zoom In"
+        )
+
+        self.pdf_zoom_in_action.setToolTip(
+            "Zoom in"
+        )
+
+        self.pdf_zoom_in_action.triggered.connect(
+            self.pdf_zoom_in
+        )
+
+        self.pdf_zoom_reset_action = toolbar.addAction(
+            "100%"
+        )
+
+        self.pdf_zoom_reset_action.setToolTip(
+            "Reset to 100% zoom"
+        )
+
+        self.pdf_zoom_reset_action.triggered.connect(
+            self.pdf_zoom_reset
+        )
+
+        toolbar.addSeparator()
+
+        # -------------------------------------------------
+        # Fit modes
+        # -------------------------------------------------
+
+        toolbar.addWidget(
+            QLabel("View:")
+        )
+
+        self.pdf_zoom_combo = QComboBox()
+
+        self.pdf_zoom_combo.addItem(
+            "Fit Width",
+            "width"
+        )
+
+        self.pdf_zoom_combo.addItem(
+            "Fit Page",
+            "page"
+        )
+
+        self.pdf_zoom_combo.addItem(
+            "Custom",
+            "custom"
+        )
+
+        self.pdf_zoom_combo.setToolTip(
+            "PDF zoom mode"
+        )
+
+        self.pdf_zoom_combo.currentIndexChanged.connect(
+            self.pdf_zoom_mode_selected
+        )
+
+        toolbar.addWidget(
+            self.pdf_zoom_combo
+        )
+
+        toolbar.addSeparator()
+
+        # -------------------------------------------------
+        # Page layout
+        # -------------------------------------------------
+
+        self.pdf_single_page_action = QAction(
+            "Single Page",
+            self
+        )
+
+        self.pdf_single_page_action.setCheckable(
+            True
+        )
+
+        self.pdf_single_page_action.triggered.connect(
+            self.pdf_single_page
+        )
+
+        toolbar.addAction(
+            self.pdf_single_page_action
+        )
+
+        self.pdf_continuous_action = QAction(
+            "Continuous",
+            self
+        )
+
+        self.pdf_continuous_action.setCheckable(
+            True
+        )
+
+        self.pdf_continuous_action.setChecked(
+            True
+        )
+
+        self.pdf_continuous_action.triggered.connect(
+            self.pdf_continuous
+        )
+
+        toolbar.addAction(
+            self.pdf_continuous_action
+        )
+
+        # -------------------------------------------------
+        # Hide until a PDF is selected.
+        # -------------------------------------------------
+
+        toolbar.hide()
 
 
     # =====================================================
@@ -829,26 +1266,13 @@ class FileViewer(QMainWindow):
         previous
     ):
 
-        print(
-            "\nDEBUG: currentItemChanged fired"
-        )
-
         if current is None:
-
-            print(
-                "DEBUG: current item is None"
-            )
 
             return
 
         path = current.data(
             0,
             Qt.UserRole
-        )
-
-        print(
-            "DEBUG: selected path =",
-            path
         )
 
         if not path:
@@ -869,45 +1293,12 @@ class FileViewer(QMainWindow):
         path
     ):
 
-        print(
-            "\nDEBUG 2: select_file_path()"
-        )
-
-        print(
-            "DEBUG 2: path =",
-            path
-        )
-
-        print(
-            "DEBUG 2: exists =",
-            os.path.exists(path)
-        )
-
-        print(
-            "DEBUG 2: is file =",
-            os.path.isfile(path)
-        )
-
-        print(
-            "DEBUG 2: is directory =",
-            os.path.isdir(path)
-        )
-
-        # -------------------------------------------------
-        # Prevent duplicate processing while this method
-        # is already handling a selection.
-        # -------------------------------------------------
-
         if self.loading_file:
-
-            print(
-                "DEBUG 2: loading_file=True; ignoring duplicate"
-            )
 
             return
 
         # -------------------------------------------------
-        # Protect unsaved changes when changing files.
+        # Protect unsaved changes.
         # -------------------------------------------------
 
         if (
@@ -916,15 +1307,7 @@ class FileViewer(QMainWindow):
             and self.viewer.document().isModified()
         ):
 
-            print(
-                "DEBUG 2: current document has unsaved changes"
-            )
-
             if not self.maybe_save_changes():
-
-                print(
-                    "DEBUG 2: selection cancelled"
-                )
 
                 return
 
@@ -932,53 +1315,7 @@ class FileViewer(QMainWindow):
 
         try:
 
-            # -------------------------------------------------
-            # Reset viewer state.
-            # -------------------------------------------------
-
-            self.current_pixmap = None
-
-            self.editing_enabled = False
-
-            self.edit_action.setChecked(
-                False
-            )
-
-            self.save_action.setEnabled(
-                False
-            )
-
-            self.save_as_action.setEnabled(
-                False
-            )
-
-            self.viewer.setReadOnly(
-                True
-            )
-
-            # -------------------------------------------------
-            # Clear existing text.
-            # -------------------------------------------------
-
-            self.viewer.clear()
-
-            # -------------------------------------------------
-            # Clear selection correctly.
-            #
-            # QTextEdit has no clearSelection() method.
-            # -------------------------------------------------
-
-            cursor = self.viewer.textCursor()
-
-            cursor.clearSelection()
-
-            self.viewer.setTextCursor(
-                cursor
-            )
-
-            self.viewer.document().setModified(
-                False
-            )
+            self.reset_non_pdf_state()
 
             # -------------------------------------------------
             # Directory.
@@ -986,15 +1323,9 @@ class FileViewer(QMainWindow):
 
             if os.path.isdir(path):
 
-                print(
-                    "DEBUG 2: displaying directory"
-                )
-
                 self.current_file = None
 
-                self.image_label.clear()
-
-                self.image_label.setText(
+                self.viewer.setPlainText(
                     "Directory selected"
                 )
 
@@ -1010,10 +1341,6 @@ class FileViewer(QMainWindow):
 
             if not os.path.isfile(path):
 
-                print(
-                    "DEBUG 2: invalid file path"
-                )
-
                 self.current_file = None
 
                 self.viewer.setPlainText(
@@ -1021,17 +1348,11 @@ class FileViewer(QMainWindow):
                     f"{path}"
                 )
 
+                self.show_text_viewer()
+
                 return
 
-            # -------------------------------------------------
-            # File.
-            # -------------------------------------------------
-
             self.current_file = path
-
-            print(
-                "DEBUG 2: loading file"
-            )
 
             self.display_file(
                 path
@@ -1041,9 +1362,54 @@ class FileViewer(QMainWindow):
 
             self.loading_file = False
 
-            print(
-                "DEBUG 2: loading_file=False"
-            )
+
+    # =====================================================
+    # Reset non-PDF state
+    # =====================================================
+
+    def reset_non_pdf_state(self):
+
+        self.current_pixmap = None
+
+        self.editing_enabled = False
+
+        self.edit_action.setChecked(
+            False
+        )
+
+        self.save_action.setEnabled(
+            False
+        )
+
+        self.save_as_action.setEnabled(
+            False
+        )
+
+        self.viewer.setReadOnly(
+            True
+        )
+
+        self.viewer.clear()
+
+        cursor = self.viewer.textCursor()
+
+        cursor.clearSelection()
+
+        self.viewer.setTextCursor(
+            cursor
+        )
+
+        self.viewer.document().setModified(
+            False
+        )
+
+        self.image_label.clear()
+
+        self.image_label.setText(
+            "No image selected"
+        )
+
+        self.pdf_toolbar.hide()
 
 
     # =====================================================
@@ -1055,33 +1421,27 @@ class FileViewer(QMainWindow):
         path
     ):
 
-        print(
-            "\nDEBUG 3: display_file()"
-        )
-
-        print(
-            "DEBUG 3: path =",
-            path
-        )
-
         extension = os.path.splitext(
             path
         )[1].lower()
 
-        print(
-            "DEBUG 3: extension =",
-            extension
-        )
+        # -------------------------------------------------
+        # PDF.
+        # -------------------------------------------------
+
+        if extension in PDF_EXTENSIONS:
+
+            self.display_pdf(
+                path
+            )
+
+            return
 
         # -------------------------------------------------
         # Image.
         # -------------------------------------------------
 
         if extension in IMAGE_EXTENSIONS:
-
-            print(
-                "DEBUG 3: image"
-            )
 
             self.display_image(
                 path
@@ -1101,10 +1461,6 @@ class FileViewer(QMainWindow):
 
         if extension == ".rtf":
 
-            print(
-                "DEBUG 3: RTF"
-            )
-
             self.display_rtf(
                 path
             )
@@ -1117,10 +1473,6 @@ class FileViewer(QMainWindow):
 
         if extension in TEXT_EXTENSIONS:
 
-            print(
-                "DEBUG 3: text"
-            )
-
             self.display_text(
                 path
             )
@@ -1130,10 +1482,6 @@ class FileViewer(QMainWindow):
         # -------------------------------------------------
         # Unknown file type.
         # -------------------------------------------------
-
-        print(
-            "DEBUG 3: unknown type"
-        )
 
         self.viewer.setPlainText(
             "No preview available for this file type.\n\n"
@@ -1148,22 +1496,15 @@ class FileViewer(QMainWindow):
 
 
     # =====================================================
-    # Display normal text
+    # PDF display
     # =====================================================
 
-    def display_text(
+    def display_pdf(
         self,
         path
     ):
 
-        print(
-            "\nDEBUG 4: display_text()"
-        )
-
-        print(
-            "DEBUG 4: path =",
-            path
-        )
+        self.show_pdf_viewer()
 
         try:
 
@@ -1173,21 +1514,767 @@ class FileViewer(QMainWindow):
 
         except OSError as error:
 
-            print(
-                "DEBUG 4: getsize error =",
-                repr(error)
+            self.pdf_view.hide()
+
+            self.show_text_viewer()
+
+            self.viewer.setPlainText(
+                f"Could not access PDF:\n\n{error}"
             )
+
+            return
+
+        if file_size > MAX_PDF_FILE_SIZE:
+
+            self.pdf_view.hide()
+
+            self.show_text_viewer()
+
+            self.viewer.setPlainText(
+                "This PDF is larger than 250 MB "
+                "and was not loaded."
+            )
+
+            return
+
+        # -------------------------------------------------
+        # Close previous PDF.
+        # -------------------------------------------------
+
+        self.pdf_document.close()
+
+        # -------------------------------------------------
+        # Load new PDF.
+        #
+        # QPdfDocument.load() returns an Error enum.
+        # -------------------------------------------------
+
+        error = self.pdf_document.load(
+            path
+        )
+
+        if error != QPdfDocument.Error.None_:
+
+            self.pdf_toolbar.hide()
+
+            self.show_text_viewer()
+
+            self.viewer.setPlainText(
+                "Could not open PDF:\n\n"
+                f"{self.pdf_error_text(error)}\n\n"
+                f"{path}"
+            )
+
+            self.update_window_title()
+
+            return
+
+        # -------------------------------------------------
+        # For normal local files the document should be
+        # ready synchronously, but statusChanged handles
+        # versions/platforms where loading is asynchronous.
+        # -------------------------------------------------
+
+        if (
+            self.pdf_document.status()
+            == QPdfDocument.Status.Ready
+        ):
+
+            self.pdf_document_ready()
+
+        else:
+
+            self.viewer.setPlainText(
+                "Loading PDF..."
+            )
+
+        self.update_window_title()
+
+
+    # =====================================================
+    # PDF status
+    # =====================================================
+
+    def pdf_status_changed(
+        self,
+        status
+    ):
+
+        if (
+            self.current_file is None
+            or not self.current_file.lower().endswith(
+                ".pdf"
+            )
+        ):
+
+            return
+
+        if status == QPdfDocument.Status.Ready:
+
+            self.pdf_document_ready()
+
+        elif status == QPdfDocument.Status.Error:
+
+            error = self.pdf_document.error()
+
+            self.pdf_toolbar.hide()
+
+            self.show_text_viewer()
+
+            self.viewer.setPlainText(
+                "Could not open PDF:\n\n"
+                f"{self.pdf_error_text(error)}\n\n"
+                f"{self.current_file}"
+            )
+
+
+    # =====================================================
+    # PDF ready
+    # =====================================================
+
+    def pdf_document_ready(self):
+
+        if not self.current_file:
+
+            return
+
+        if not self.current_file.lower().endswith(
+            ".pdf"
+        ):
+
+            return
+
+        self.show_pdf_viewer()
+
+        page_count = self.pdf_document.pageCount()
+
+        self.pdf_page_spin.blockSignals(
+            True
+        )
+
+        self.pdf_page_spin.setMinimum(
+            1
+        )
+
+        self.pdf_page_spin.setMaximum(
+            max(
+                1,
+                page_count
+            )
+        )
+
+        self.pdf_page_spin.setValue(
+            1
+        )
+
+        self.pdf_page_spin.blockSignals(
+            True
+        )
+
+        self.pdf_page_spin.blockSignals(
+            False
+        )
+
+        self.pdf_page_count_label.setText(
+            f"of {page_count}"
+        )
+
+        # -------------------------------------------------
+        # Reset navigator.
+        # -------------------------------------------------
+
+        navigator = self.pdf_view.pageNavigator()
+
+        navigator.clear()
+
+        if page_count > 0:
+
+            navigator.jump(
+                0,
+                QPointF(),
+                0
+            )
+
+        # -------------------------------------------------
+        # Default PDF presentation.
+        # -------------------------------------------------
+
+        self.pdf_view.setPageMode(
+            QPdfView.PageMode.MultiPage
+        )
+
+        self.pdf_view.setZoomMode(
+            QPdfView.ZoomMode.FitToWidth
+        )
+
+        self.pdf_continuous_action.setChecked(
+            True
+        )
+
+        self.pdf_single_page_action.setChecked(
+            False
+        )
+
+        self.update_pdf_toolbar_state()
+
+
+    # =====================================================
+    # PDF error text
+    # =====================================================
+
+    def pdf_error_text(
+        self,
+        error
+    ):
+
+        mapping = {
+            QPdfDocument.Error.None_:
+                "No error.",
+            QPdfDocument.Error.Unknown:
+                "Unknown PDF error.",
+            QPdfDocument.Error.DataNotYetAvailable:
+                "PDF data is not yet available.",
+            QPdfDocument.Error.FileNotFound:
+                "The PDF file could not be found.",
+            QPdfDocument.Error.InvalidFileFormat:
+                "The file is not a valid PDF.",
+            QPdfDocument.Error.IncorrectPassword:
+                "The PDF password is incorrect.",
+            QPdfDocument.Error.UnsupportedSecurityScheme:
+                "This PDF uses an unsupported security scheme.",
+        }
+
+        return mapping.get(
+            error,
+            str(error)
+        )
+
+
+    # =====================================================
+    # PDF toolbar visibility
+    # =====================================================
+
+    def update_pdf_toolbar_state(self):
+
+        is_pdf = (
+            self.current_file is not None
+            and self.current_file.lower().endswith(
+                ".pdf"
+            )
+            and self.pdf_document.status()
+            == QPdfDocument.Status.Ready
+        )
+
+        self.pdf_toolbar.setVisible(
+            is_pdf
+        )
+
+        if not is_pdf:
+
+            return
+
+        page_count = self.pdf_document.pageCount()
+
+        current_page = (
+            self.pdf_view
+            .pageNavigator()
+            .currentPage()
+        )
+
+        if current_page < 0:
+
+            current_page = 0
+
+        current_page = min(
+            current_page,
+            max(
+                0,
+                page_count - 1
+            )
+        )
+
+        self.pdf_page_spin.blockSignals(
+            True
+        )
+
+        self.pdf_page_spin.setMaximum(
+            max(
+                1,
+                page_count
+            )
+        )
+
+        self.pdf_page_spin.setValue(
+            current_page + 1
+        )
+
+        self.pdf_page_spin.blockSignals(
+            False
+        )
+
+        self.pdf_page_count_label.setText(
+            f"of {page_count}"
+        )
+
+        self.pdf_first_action.setEnabled(
+            current_page > 0
+        )
+
+        self.pdf_previous_action.setEnabled(
+            current_page > 0
+        )
+
+        self.pdf_next_action.setEnabled(
+            current_page < page_count - 1
+        )
+
+        self.pdf_last_action.setEnabled(
+            current_page < page_count - 1
+        )
+
+        navigator = self.pdf_view.pageNavigator()
+
+        self.pdf_back_action.setEnabled(
+            navigator.backAvailable()
+        )
+
+        self.pdf_forward_action.setEnabled(
+            navigator.forwardAvailable()
+        )
+
+        self.pdf_zoom_in_action.setEnabled(
+            self.pdf_view.zoomMode()
+            == QPdfView.ZoomMode.Custom
+            and self.pdf_view.zoomFactor()
+            < PDF_MAX_ZOOM
+        )
+
+        self.pdf_zoom_out_action.setEnabled(
+            self.pdf_view.zoomMode()
+            == QPdfView.ZoomMode.Custom
+            and self.pdf_view.zoomFactor()
+            > PDF_MIN_ZOOM
+        )
+
+
+    # =====================================================
+    # PDF current page changed
+    # =====================================================
+
+    def pdf_current_page_changed(
+        self,
+        page
+    ):
+
+        if page < 0:
+
+            return
+
+        self.pdf_page_spin.blockSignals(
+            True
+        )
+
+        self.pdf_page_spin.setValue(
+            page + 1
+        )
+
+        self.pdf_page_spin.blockSignals(
+            False
+        )
+
+        self.update_pdf_toolbar_state()
+
+
+    # =====================================================
+    # PDF navigation state
+    # =====================================================
+
+    def pdf_navigation_state_changed(
+        self,
+        available
+    ):
+
+        self.update_pdf_toolbar_state()
+
+
+    # =====================================================
+    # PDF zoom changed
+    # =====================================================
+
+    def pdf_zoom_changed(
+        self,
+        factor
+    ):
+
+        if (
+            self.pdf_view.zoomMode()
+            == QPdfView.ZoomMode.Custom
+        ):
+
+            self.pdf_zoom_label.setText(
+                f"{factor * 100:.0f}%"
+            )
+
+        self.update_pdf_toolbar_state()
+
+
+    # =====================================================
+    # PDF zoom mode changed
+    # =====================================================
+
+    def pdf_zoom_mode_changed(
+        self,
+        mode
+    ):
+
+        if mode == QPdfView.ZoomMode.FitToWidth:
+
+            self.pdf_zoom_label.setText(
+                "Fit Width"
+            )
+
+            self.pdf_zoom_combo.blockSignals(
+                True
+            )
+
+            self.pdf_zoom_combo.setCurrentIndex(
+                0
+            )
+
+            self.pdf_zoom_combo.blockSignals(
+                False
+            )
+
+        elif mode == QPdfView.ZoomMode.FitInView:
+
+            self.pdf_zoom_label.setText(
+                "Fit Page"
+            )
+
+            self.pdf_zoom_combo.blockSignals(
+                True
+            )
+
+            self.pdf_zoom_combo.setCurrentIndex(
+                1
+            )
+
+            self.pdf_zoom_combo.blockSignals(
+                False
+            )
+
+        else:
+
+            self.pdf_zoom_label.setText(
+                f"{self.pdf_view.zoomFactor() * 100:.0f}%"
+            )
+
+            self.pdf_zoom_combo.blockSignals(
+                True
+            )
+
+            self.pdf_zoom_combo.setCurrentIndex(
+                2
+            )
+
+            self.pdf_zoom_combo.blockSignals(
+                False
+            )
+
+        self.update_pdf_toolbar_state()
+
+
+    # =====================================================
+    # PDF page navigation
+    # =====================================================
+
+    def pdf_jump_to_page(
+        self,
+        page
+    ):
+
+        page_count = self.pdf_document.pageCount()
+
+        if page_count <= 0:
+
+            return
+
+        page = max(
+            0,
+            min(
+                page,
+                page_count - 1
+            )
+        )
+
+        navigator = self.pdf_view.pageNavigator()
+
+        zoom = navigator.currentZoom()
+
+        # -------------------------------------------------
+        # QPdfPageNavigator does NOT have setCurrentPage().
+        #
+        # jump() is the supported way to navigate to a page.
+        # -------------------------------------------------
+
+        navigator.jump(
+            page,
+            QPointF(),
+            zoom
+        )
+
+
+    # -----------------------------------------------------
+
+    def pdf_first_page(self):
+
+        self.pdf_jump_to_page(
+            0
+        )
+
+
+    # -----------------------------------------------------
+
+    def pdf_previous_page(self):
+
+        current = (
+            self.pdf_view
+            .pageNavigator()
+            .currentPage()
+        )
+
+        self.pdf_jump_to_page(
+            current - 1
+        )
+
+
+    # -----------------------------------------------------
+
+    def pdf_next_page(self):
+
+        current = (
+            self.pdf_view
+            .pageNavigator()
+            .currentPage()
+        )
+
+        self.pdf_jump_to_page(
+            current + 1
+        )
+
+
+    # -----------------------------------------------------
+
+    def pdf_last_page(self):
+
+        self.pdf_jump_to_page(
+            self.pdf_document.pageCount() - 1
+        )
+
+
+    # =====================================================
+    # PDF page spin box
+    # =====================================================
+
+    def pdf_page_spin_changed(
+        self,
+        value
+    ):
+
+        self.pdf_jump_to_page(
+            value - 1
+        )
+
+
+    # =====================================================
+    # PDF navigation history
+    # =====================================================
+
+    def pdf_go_back(self):
+
+        self.pdf_view.pageNavigator().back()
+
+
+    # -----------------------------------------------------
+
+    def pdf_go_forward(self):
+
+        self.pdf_view.pageNavigator().forward()
+
+
+    # =====================================================
+    # PDF zoom
+    # =====================================================
+
+    def pdf_zoom_in(self):
+
+        current = self.pdf_view.zoomFactor()
+
+        if (
+            self.pdf_view.zoomMode()
+            != QPdfView.ZoomMode.Custom
+        ):
+
+            current = PDF_DEFAULT_ZOOM
+
+        new_factor = min(
+            PDF_MAX_ZOOM,
+            current * PDF_ZOOM_STEP
+        )
+
+        self.pdf_view.setZoomMode(
+            QPdfView.ZoomMode.Custom
+        )
+
+        self.pdf_view.setZoomFactor(
+            new_factor
+        )
+
+
+    # -----------------------------------------------------
+
+    def pdf_zoom_out(self):
+
+        current = self.pdf_view.zoomFactor()
+
+        if (
+            self.pdf_view.zoomMode()
+            != QPdfView.ZoomMode.Custom
+        ):
+
+            current = PDF_DEFAULT_ZOOM
+
+        new_factor = max(
+            PDF_MIN_ZOOM,
+            current / PDF_ZOOM_STEP
+        )
+
+        self.pdf_view.setZoomMode(
+            QPdfView.ZoomMode.Custom
+        )
+
+        self.pdf_view.setZoomFactor(
+            new_factor
+        )
+
+
+    # -----------------------------------------------------
+
+    def pdf_zoom_reset(self):
+
+        self.pdf_view.setZoomMode(
+            QPdfView.ZoomMode.Custom
+        )
+
+        self.pdf_view.setZoomFactor(
+            PDF_DEFAULT_ZOOM
+        )
+
+
+    # =====================================================
+    # PDF zoom modes
+    # =====================================================
+
+    def pdf_fit_width(self):
+
+        self.pdf_view.setZoomMode(
+            QPdfView.ZoomMode.FitToWidth
+        )
+
+
+    # -----------------------------------------------------
+
+    def pdf_fit_page(self):
+
+        self.pdf_view.setZoomMode(
+            QPdfView.ZoomMode.FitInView
+        )
+
+
+    # -----------------------------------------------------
+
+    def pdf_zoom_mode_selected(
+        self,
+        index
+    ):
+
+        mode = self.pdf_zoom_combo.itemData(
+            index
+        )
+
+        if mode == "width":
+
+            self.pdf_fit_width()
+
+        elif mode == "page":
+
+            self.pdf_fit_page()
+
+        elif mode == "custom":
+
+            self.pdf_view.setZoomMode(
+                QPdfView.ZoomMode.Custom
+            )
+
+
+    # =====================================================
+    # PDF page modes
+    # =====================================================
+
+    def pdf_single_page(self):
+
+        self.pdf_view.setPageMode(
+            QPdfView.PageMode.SinglePage
+        )
+
+        self.pdf_single_page_action.setChecked(
+            True
+        )
+
+        self.pdf_continuous_action.setChecked(
+            False
+        )
+
+
+    # -----------------------------------------------------
+
+    def pdf_continuous(self):
+
+        self.pdf_view.setPageMode(
+            QPdfView.PageMode.MultiPage
+        )
+
+        self.pdf_single_page_action.setChecked(
+            False
+        )
+
+        self.pdf_continuous_action.setChecked(
+            True
+        )
+
+
+    # =====================================================
+    # Display normal text
+    # =====================================================
+
+    def display_text(
+        self,
+        path
+    ):
+
+        try:
+
+            file_size = os.path.getsize(
+                path
+            )
+
+        except OSError as error:
 
             self.viewer.setPlainText(
                 f"Could not access file:\n\n{error}"
             )
 
             return
-
-        print(
-            "DEBUG 4: file size =",
-            file_size
-        )
 
         if file_size > MAX_TEXT_FILE_SIZE:
 
@@ -1200,15 +2287,7 @@ class FileViewer(QMainWindow):
 
         try:
 
-            # -------------------------------------------------
-            # UTF-8 first.
-            # -------------------------------------------------
-
             try:
-
-                print(
-                    "DEBUG 4: trying UTF-8"
-                )
 
                 with open(
                     path,
@@ -1220,10 +2299,6 @@ class FileViewer(QMainWindow):
 
             except UnicodeDecodeError:
 
-                print(
-                    "DEBUG 4: UTF-8 failed; trying cp1252"
-                )
-
                 with open(
                     path,
                     "r",
@@ -1232,22 +2307,9 @@ class FileViewer(QMainWindow):
 
                     contents = file.read()
 
-            print(
-                "DEBUG 4: characters read =",
-                len(contents)
-            )
-
-            # -------------------------------------------------
-            # Put contents into viewer.
-            # -------------------------------------------------
-
             self.viewer.setPlainText(
                 contents
             )
-
-            # -------------------------------------------------
-            # This load came from disk, so it is not modified.
-            # -------------------------------------------------
 
             self.viewer.document().setModified(
                 False
@@ -1255,39 +2317,13 @@ class FileViewer(QMainWindow):
 
             self.update_window_title()
 
-            print(
-                "DEBUG 4: viewer characters =",
-                len(
-                    self.viewer.toPlainText()
-                )
-            )
-
-            print(
-                "DEBUG 4: viewer visible =",
-                self.viewer.isVisible()
-            )
-
-            print(
-                "DEBUG 4: viewer geometry =",
-                self.viewer.geometry()
-            )
-
         except PermissionError:
-
-            print(
-                "DEBUG 4: permission denied"
-            )
 
             self.viewer.setPlainText(
                 "Permission denied."
             )
 
         except OSError as error:
-
-            print(
-                "DEBUG 4: open error =",
-                repr(error)
-            )
 
             self.viewer.setPlainText(
                 f"Could not open file:\n\n{error}"
@@ -1500,11 +2536,6 @@ class FileViewer(QMainWindow):
         checked
     ):
 
-        print(
-            "\nDEBUG EDIT: toggle_editing =",
-            checked
-        )
-
         if checked:
 
             if not self.current_file:
@@ -1562,10 +2593,6 @@ class FileViewer(QMainWindow):
 
             return
 
-        # -------------------------------------------------
-        # Turning editing off.
-        # -------------------------------------------------
-
         if not self.maybe_save_changes():
 
             self.edit_action.setChecked(
@@ -1599,11 +2626,6 @@ class FileViewer(QMainWindow):
         self,
         modified
     ):
-
-        print(
-            "DEBUG EDIT: document modified =",
-            modified
-        )
 
         self.update_window_title()
 
@@ -1692,19 +2714,11 @@ class FileViewer(QMainWindow):
             self.current_file
         )[1].lower()
 
-        # -------------------------------------------------
-        # RTF.
-        # -------------------------------------------------
-
         if extension == ".rtf":
 
             return self.save_rtf(
                 self.current_file
             )
-
-        # -------------------------------------------------
-        # Normal text.
-        # -------------------------------------------------
 
         try:
 
@@ -1725,11 +2739,6 @@ class FileViewer(QMainWindow):
             )
 
             self.update_window_title()
-
-            print(
-                "DEBUG SAVE: saved",
-                self.current_file
-            )
 
             return True
 
@@ -1824,12 +2833,6 @@ class FileViewer(QMainWindow):
                     False
                 )
 
-            # -------------------------------------------------
-            # IMPORTANT:
-            #
-            # Save As becomes the new current file.
-            # -------------------------------------------------
-
             self.current_file = path
 
             self.viewer.document().setModified(
@@ -1837,11 +2840,6 @@ class FileViewer(QMainWindow):
             )
 
             self.update_window_title()
-
-            print(
-                "DEBUG SAVE AS: current_file =",
-                self.current_file
-            )
 
             return True
 
@@ -1927,11 +2925,6 @@ class FileViewer(QMainWindow):
 
             self.update_window_title()
 
-            print(
-                "DEBUG SAVE RTF: saved",
-                path
-            )
-
             return True
 
         except OSError as error:
@@ -2006,10 +2999,6 @@ class FileViewer(QMainWindow):
             start_position
         )
 
-        # -------------------------------------------------
-        # Wrap around.
-        # -------------------------------------------------
-
         if search_cursor.isNull():
 
             search_cursor = document.find(
@@ -2026,10 +3015,6 @@ class FileViewer(QMainWindow):
             )
 
             return
-
-        # -------------------------------------------------
-        # Select actual match.
-        # -------------------------------------------------
 
         self.viewer.setTextCursor(
             search_cursor
@@ -2220,19 +3205,11 @@ class FileViewer(QMainWindow):
         entries
     ):
 
-        # -------------------------------------------------
-        # Hide dot files.
-        # -------------------------------------------------
-
         entries = [
             entry
             for entry in entries
             if not entry.name.startswith(".")
         ]
-
-        # -------------------------------------------------
-        # Sort by name.
-        # -------------------------------------------------
 
         if self.sort_column == "name":
 
@@ -2266,10 +3243,6 @@ class FileViewer(QMainWindow):
             )
 
             return directories + files
-
-        # -------------------------------------------------
-        # Sort by modified time.
-        # -------------------------------------------------
 
         if self.sort_column == "modified":
 
@@ -2323,18 +3296,39 @@ class FileViewer(QMainWindow):
 
     def show_text_viewer(self):
 
+        self.pdf_view.hide()
+
         self.image_scroll.hide()
 
         self.viewer.show()
+
+        self.pdf_toolbar.hide()
 
 
     # -----------------------------------------------------
 
     def show_image_viewer(self):
 
+        self.pdf_view.hide()
+
         self.viewer.hide()
 
         self.image_scroll.show()
+
+        self.pdf_toolbar.hide()
+
+
+    # -----------------------------------------------------
+
+    def show_pdf_viewer(self):
+
+        self.viewer.hide()
+
+        self.image_scroll.hide()
+
+        self.pdf_view.show()
+
+        self.pdf_toolbar.show()
 
 
     # =====================================================
@@ -2395,6 +3389,10 @@ class FileViewer(QMainWindow):
         self.save_as_action.setEnabled(
             False
         )
+
+        self.pdf_document.close()
+
+        self.pdf_toolbar.hide()
 
         self.tree.clear()
 
@@ -2533,6 +3531,8 @@ class FileViewer(QMainWindow):
 
         if self.maybe_save_changes():
 
+            self.pdf_document.close()
+
             event.accept()
 
         else:
@@ -2544,10 +3544,53 @@ class FileViewer(QMainWindow):
 # Application entry point
 # =========================================================
 
+
 def main():
 
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description=(
+            "Browse and preview files in a directory."
+        )
+    )
+
+    parser.add_argument(
+        "directory",
+        nargs="?",
+        help=(
+            "Directory to open when the viewer starts "
+            "(optional)."
+        ),
+    )
+
+    args, qt_args = parser.parse_known_args(
+        sys.argv[1:]
+    )
+
+    directory = None
+
+    if args.directory:
+
+        directory = os.path.abspath(
+            os.path.expanduser(
+                args.directory
+            )
+        )
+
+        if not os.path.isdir(
+            directory
+        ):
+
+            parser.error(
+                f"not a directory: {args.directory}"
+            )
+
     app = QApplication(
-        sys.argv
+        [
+            sys.argv[0],
+            *qt_args,
+        ]
     )
 
     app.setApplicationName(
@@ -2555,6 +3598,12 @@ def main():
     )
 
     window = FileViewer()
+
+    if directory:
+
+        window.load_directory(
+            directory
+        )
 
     window.show()
 
@@ -2566,3 +3615,4 @@ def main():
 if __name__ == "__main__":
 
     main()
+
