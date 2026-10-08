@@ -3,4 +3,6 @@ pyside6_addons==6.11.2
 pyside6_essentials==6.11.2
 striprtf==0.0.33
 Markdown>=3.7,<4
+Pillow>=10.0
+pillow-heif>=0.16.0
 
