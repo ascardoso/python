@@ -2471,8 +2471,16 @@ class FileViewer(QMainWindow):
 
                     contents = file.read()
 
-            self.viewer.setPlainText(
-                contents
+            if os.path.splitext(path)[1].lower() == ".md":
+
+               self.viewer.setMarkdown(
+                  contents
+              )
+
+            else:
+
+              self.viewer.setPlainText(
+                 contents
             )
 
             self.viewer.document().setModified(
@@ -2946,7 +2954,13 @@ class FileViewer(QMainWindow):
 
         try:
 
-            contents = self.viewer.toPlainText()
+            if self.current_file.lower().endswith(".md"):
+
+                contents = self.viewer.toMarkdown()
+
+            else:
+
+                contents = self.viewer.toPlainText()
 
             with open(
                 self.current_file,

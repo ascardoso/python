@@ -55,6 +55,7 @@ SOFTWARE.
 #   - Save As
 #   - Unsaved-change protection
 #   - Font size controls
+#   - Plays .wav files
 #
 # Dependencies:
 #
@@ -68,7 +69,6 @@ SOFTWARE.
 
 import os
 import sys
-
 
 from PySide6.QtCore import (
     QPointF,
@@ -84,6 +84,16 @@ from PySide6.QtGui import (
     QPixmap,
 )
 
+from PySide6.QtCore import (
+    QPointF,
+    Qt,
+    QUrl,
+)
+
+from PySide6.QtMultimedia import (
+    QMediaPlayer,
+    QAudioOutput,
+)
 
 from PySide6.QtPdf import (
     QPdfDocument,
@@ -174,6 +184,10 @@ IMAGE_EXTENSIONS = {
 
 PDF_EXTENSIONS = {
     ".pdf",
+}
+
+WAV_EXTENSIONS = {
+	".wav",
 }
 
 
@@ -337,6 +351,41 @@ class FileViewer(QMainWindow):
         self.pdf_single_page_action = None
 
         self.pdf_continuous_action = None
+        
+        # -------------------------------------------------
+        # Audio playback state
+        # -------------------------------------------------
+
+        self.audio_output = QAudioOutput(
+            self
+        )
+
+        self.audio_player = QMediaPlayer(
+            self
+        )
+
+        self.audio_player.setAudioOutput(
+            self.audio_output
+        )
+
+        self.audio_player.errorOccurred.connect(
+            self.audio_error
+        )
+
+        self.audio_player.playbackStateChanged.connect(
+            self.audio_state_changed
+        )
+
+        self.audio_player.mediaStatusChanged.connect(
+            self.audio_media_status_changed
+        )        
+        print("Audio methods available:")
+
+        print(hasattr(self, "play_wav"))
+        print(hasattr(self, "stop_wav"))
+        print(hasattr(self, "audio_error"))
+        print(hasattr(self, "audio_state_changed"))
+        print(hasattr(self, "audio_media_status_changed"))
 
         # -------------------------------------------------
         # Build UI
@@ -372,7 +421,103 @@ class FileViewer(QMainWindow):
 
         self.update_pdf_toolbar_state()
 
+# =====================================================
+# WAV playback
+# =====================================================
 
+    def play_wav(self, path):
+
+        # Stop previous playback.
+        self.stop_wav()
+
+        try:
+
+            self.audio_player.setSource(
+                QUrl.fromLocalFile(
+                    os.path.abspath(path)
+                )
+            )
+
+            self.audio_file = path
+ 
+            self.audio_player.play()
+
+            self.viewer.setPlainText(
+                "Playing WAV audio:\n\n"
+                f"{os.path.basename(path)}\n\n"
+                "Playback is in progress."
+            )
+
+        except Exception as error:
+
+            self.viewer.setPlainText(
+                "Could not play WAV file:\n\n"
+                f"{path}\n\n"
+                f"Error: {error}"
+            )
+
+# =====================================================
+# Stop WAV playback
+# =====================================================
+
+    def stop_wav(self):
+	
+        self.audio_player.stop()
+	
+        self.audio_player.setSource(
+            QUrl()
+        )
+	
+        self.audio_file = None
+
+# =====================================================
+# Audio error
+# =====================================================
+
+    def audio_error(self, error, error_string):
+	
+        if error != QMediaPlayer.Error.NoError:
+	
+            self.viewer.setPlainText(
+				"Audio playback error:\n\n"
+				f"{error_string}"
+			)
+
+
+# =====================================================
+# Audio playback state
+# =====================================================
+
+    def audio_state_changed(
+		self,
+		state
+	):
+	
+        if state == QMediaPlayer.PlaybackState.StoppedState:
+	
+            if self.audio_file:
+	
+                self.viewer.setPlainText(
+					"WAV playback finished:\n\n"
+					f"{os.path.basename(self.audio_file)}"
+				)
+	
+                self.audio_file = None
+
+
+# =====================================================
+# Audio media status
+# =====================================================
+
+    def audio_media_status_changed(
+		self,
+		status
+	):
+	
+        if status == QMediaPlayer.MediaStatus.EndOfMedia:
+	
+            self.audio_file = None
+                      
     # =====================================================
     # Create UI
     # =====================================================
@@ -1371,6 +1516,8 @@ class FileViewer(QMainWindow):
     # =====================================================
 
     def reset_non_pdf_state(self):
+    
+        self.stop_wav()
 
         self.current_pixmap = None
 
@@ -1435,6 +1582,20 @@ class FileViewer(QMainWindow):
         if extension in PDF_EXTENSIONS:
 
             self.display_pdf(
+                path
+            )
+
+            return
+            
+        # -------------------------------------------------
+        # WAV audio.
+        # -------------------------------------------------
+
+        if extension in WAV_EXTENSIONS:
+
+            self.show_text_viewer()
+
+            self.play_wav(
                 path
             )
 
@@ -2310,8 +2471,16 @@ class FileViewer(QMainWindow):
 
                     contents = file.read()
 
-            self.viewer.setPlainText(
-                contents
+            if os.path.splitext(path)[1].lower() == ".md":
+
+               self.viewer.setMarkdown(
+                  contents
+              )
+
+            else:
+
+              self.viewer.setPlainText(
+                 contents
             )
 
             self.viewer.document().setModified(
@@ -2785,7 +2954,13 @@ class FileViewer(QMainWindow):
 
         try:
 
-            contents = self.viewer.toPlainText()
+            if self.current_file.lower().endswith(".md"):
+
+                contents = self.viewer.toMarkdown()
+
+            else:
+
+                contents = self.viewer.toPlainText()
 
             with open(
                 self.current_file,
@@ -3588,18 +3763,15 @@ class FileViewer(QMainWindow):
     # =====================================================
 
     def closeEvent(
-        self,
-        event
-    ):
+		self,
+		event
+		):
 
         if self.maybe_save_changes():
-
+            self.stop_wav()
             self.pdf_document.close()
-
             event.accept()
-
         else:
-
             event.ignore()
 
 
