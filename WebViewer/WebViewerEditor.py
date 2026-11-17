@@ -1092,13 +1092,13 @@ class BookmarkBrowser(NSObject):
             .initWithFrame_(
                 NSMakeRect(
                     10,
-                    height - 40,
+                    height - 40 - 11,
                     350,
                     30
                 )
             )
         )
-
+        
         self.search_field.setPlaceholderString_(
             "Search bookmarks…"
         )
@@ -1121,13 +1121,13 @@ class BookmarkBrowser(NSObject):
             .initWithFrame_(
                 NSMakeRect(
                     370,
-                    height - 40,
+                    height - 40 - 11,
                     700,
                     30
                 )
             )
         )
-
+        
         self.url_field.setPlaceholderString_(
             "URL"
         )
@@ -1161,13 +1161,13 @@ class BookmarkBrowser(NSObject):
                 .initWithFrame_(
                     NSMakeRect(
                         x,
-                        height - 40,
+                        height - 40 - 11,
                         width_button,
                         30
                     )
                 )
             )
-
+            
             button.setTitle_(title)
             button.setTarget_(self)
             button.setAction_(action)
