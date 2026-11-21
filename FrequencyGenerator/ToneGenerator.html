@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Tone generator, 20 Hz to 20 kHz</title>
+<style>
+:root{
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+  --bg:#eef2f4; --panel:#fbfcfc; --ink:#14232b; --muted:#5b6c75; --line:#c9d4d9;
+  --accent:#0b7a75; --accent-ink:#ffffff; --scope:#0d1b21; --trace:#5eead4;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#0c1519; --panel:#142027; --ink:#e4eef1; --muted:#8ba0aa; --line:#2a3b44;
+    --accent:#5eead4; --accent-ink:#07211f; --scope:#071014; --trace:#5eead4; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0c1519; --panel:#142027; --ink:#e4eef1; --muted:#8ba0aa; --line:#2a3b44;
+  --accent:#5eead4; --accent-ink:#07211f; --scope:#071014; --trace:#5eead4; color-scheme:dark;
+}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*,*::before,*::after{box-sizing:inherit}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 "Avenir Next","Segoe UI",system-ui,sans-serif}
+main{max-width:640px;margin:0 auto;padding:24px 16px 40px}
+h1{font-size:1.25rem;font-weight:600;margin:0 0 16px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:20px}
+canvas{display:block;width:100%;height:110px;background:var(--scope);border-radius:8px}
+.readout{display:flex;align-items:baseline;justify-content:center;gap:8px;margin:20px 0 4px}
+#freqInput{width:6.5ch;font:600 3.4rem/1 "SF Mono","Cascadia Mono",Consolas,monospace;background:none;border:0;border-bottom:2px solid var(--line);color:var(--ink);text-align:right;padding:0;-moz-appearance:textfield}
+#freqInput::-webkit-outer-spin-button,#freqInput::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+#freqInput:focus{outline:none;border-color:var(--accent)}
+.unit{font-size:1.3rem;color:var(--muted)}
+.note{text-align:center;color:var(--muted);min-height:1.5em;margin:0 0 12px;font-size:.95rem}
+input[type=range]{width:100%;accent-color:var(--accent);height:32px;margin:0}
+.ticks{display:flex;justify-content:space-between;color:var(--muted);font-size:.78rem;margin-bottom:16px}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+button,select{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 12px;cursor:pointer;min-height:40px}
+button:hover{border-color:var(--accent)}
+button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.presets button{flex:1 1 auto;padding:8px 10px}
+.step{flex:1 1 0}
+#play{width:100%;min-height:56px;font-size:1.15rem;font-weight:600;background:var(--accent);color:var(--accent-ink);border-color:var(--accent);margin-bottom:20px}
+#play[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.field{display:grid;grid-template-columns:5.5rem 1fr 3.5rem;align-items:center;gap:10px;margin-bottom:8px}
+.field label{color:var(--muted);font-size:.95rem}
+.field output{text-align:right;font-variant-numeric:tabular-nums;color:var(--muted)}
+.warn{color:var(--muted);font-size:.85rem;margin:16px 0 0}
+</style>
+</head>
+<body>
+<main>
+  <h1>Tone generator</h1>
+  <div class="panel">
+    <canvas id="scope" aria-hidden="true"></canvas>
+
+    <div class="readout">
+      <input id="freqInput" type="number" min="20" max="20000" step="1" value="440" inputmode="decimal" aria-label="Frequency in hertz">
+      <span class="unit">Hz</span>
+    </div>
+    <p class="note" id="note"></p>
+
+    <input id="freqSlider" type="range" min="0" max="1000" value="0" aria-label="Frequency slider, logarithmic">
+    <div class="ticks" aria-hidden="true"><span>20</span><span>100</span><span>1k</span><span>10k</span><span>20k</span></div>
+
+    <div class="row">
+      <button class="step" data-step="-10">−10</button>
+      <button class="step" data-step="-1">−1</button>
+      <button class="step" data-step="1">+1</button>
+      <button class="step" data-step="10">+10</button>
+    </div>
+
+    <div class="row presets" id="presets"></div>
+
+    <button id="play" aria-pressed="false">Start tone</button>
+
+    <div class="field">
+      <label for="wave">Waveform</label>
+      <select id="wave">
+        <option value="sine">Sine</option>
+        <option value="square">Square</option>
+        <option value="triangle">Triangle</option>
+        <option value="sawtooth">Sawtooth</option>
+      </select>
+      <span></span>
+    </div>
+    <div class="field">
+      <label for="vol">Volume</label>
+      <input id="vol" type="range" min="0" max="100" value="20">
+      <output id="volOut">20%</output>
+    </div>
+
+    <p class="warn">Start with your device volume low. Very high and very low tones can be hard on speakers and hearing, and small speakers play little below about 100 Hz.</p>
+  </div>
+</main>
+
+<script>
+(function(){
+  var MIN=20, MAX=20000, LR=Math.log(MAX/MIN);
+  var $=function(id){return document.getElementById(id)};
+  var input=$('freqInput'), slider=$('freqSlider'), note=$('note'), play=$('play'),
+      wave=$('wave'), vol=$('vol'), volOut=$('volOut'), canvas=$('scope');
+  var ctx=null, osc=null, gain=null, analyser=null, playing=false, freq=440;
+
+  function clamp(f){return Math.min(MAX,Math.max(MIN,f))}
+  function toPos(f){return Math.round(Math.log(f/MIN)/LR*1000)}
+  function fromPos(p){return MIN*Math.exp(p/1000*LR)}
+  function fmt(f){return f<100?f.toFixed(1).replace(/\.0$/,''):String(Math.round(f))}
+
+  function describe(f){
+    if(f<60) return 'Sub-bass, felt more than heard';
+    if(f<250) return 'Bass';
+    if(f<500) return 'Low midrange';
+    if(f<2000) return 'Midrange';
+    if(f<4000) return 'Upper midrange, where hearing is most sensitive';
+    if(f<6000) return 'Presence';
+    if(f<12000) return 'Treble';
+    return 'Air, many adults hear little above 15 kHz';
+  }
+
+  function setFreq(f,from){
+    freq=clamp(f);
+    if(from!=='slider') slider.value=toPos(freq);
+    if(from!=='input') input.value=fmt(freq);
+    note.textContent=describe(freq);
+    if(osc) osc.frequency.setTargetAtTime(freq,ctx.currentTime,0.015);
+  }
+
+  function ensureAudio(){
+    if(ctx) return;
+    var AC=window.AudioContext||window.webkitAudioContext;
+    ctx=new AC();
+    gain=ctx.createGain(); gain.gain.value=0;
+    analyser=ctx.createAnalyser(); analyser.fftSize=2048;
+    gain.connect(analyser); analyser.connect(ctx.destination);
+  }
+  function level(){return Math.pow(vol.value/100,2)*0.5}
+
+  function start(){
+    ensureAudio();
+    if(ctx.state==='suspended') ctx.resume();
+    osc=ctx.createOscillator();
+    osc.type=wave.value; osc.frequency.value=freq;
+    osc.connect(gain); osc.start();
+    gain.gain.cancelScheduledValues(ctx.currentTime);
+    gain.gain.setTargetAtTime(level(),ctx.currentTime,0.02);
+    playing=true; play.textContent='Stop tone'; play.setAttribute('aria-pressed','true');
+  }
+  function stop(){
+    if(!playing) return;
+    var o=osc; osc=null; playing=false;
+    gain.gain.setTargetAtTime(0,ctx.currentTime,0.02);
+    setTimeout(function(){try{o.stop();o.disconnect()}catch(e){}},150);
+    play.textContent='Start tone'; play.setAttribute('aria-pressed','false');
+  }
+
+  play.addEventListener('click',function(){playing?stop():start()});
+  slider.addEventListener('input',function(){setFreq(fromPos(+slider.value),'slider')});
+  input.addEventListener('input',function(){var v=parseFloat(input.value); if(!isNaN(v)&&v>=MIN&&v<=MAX) setFreq(v,'input')});
+  input.addEventListener('change',function(){var v=parseFloat(input.value); setFreq(isNaN(v)?freq:v)});
+  document.querySelectorAll('.step').forEach(function(b){
+    b.addEventListener('click',function(){setFreq(Math.round(freq)+ +b.dataset.step)});
+  });
+  wave.addEventListener('change',function(){if(osc) osc.type=wave.value});
+  vol.addEventListener('input',function(){
+    volOut.textContent=vol.value+'%';
+    if(playing) gain.gain.setTargetAtTime(level(),ctx.currentTime,0.02);
+  });
+  document.addEventListener('keydown',function(e){
+    if(e.code==='Space' && !/INPUT|SELECT|BUTTON/.test(document.activeElement.tagName)){e.preventDefault();playing?stop():start()}
+  });
+  document.addEventListener('visibilitychange',function(){});
+
+  [[50,'50'],[100,'100'],[440,'440'],[1000,'1k'],[5000,'5k'],[10000,'10k'],[15000,'15k'],[20000,'20k']].forEach(function(p){
+    var b=document.createElement('button'); b.textContent=p[1];
+    b.addEventListener('click',function(){setFreq(p[0])});
+    $('presets').appendChild(b);
+  });
+
+  // Oscilloscope
+  var c2=canvas.getContext('2d');
+  function draw(){
+    var dpr=window.devicePixelRatio||1, w=canvas.clientWidth, h=canvas.clientHeight;
+    if(canvas.width!==w*dpr){canvas.width=w*dpr;canvas.height=h*dpr}
+    c2.setTransform(dpr,0,0,dpr,0,0);
+    c2.clearRect(0,0,w,h);
+    var trace=getComputedStyle(document.documentElement).getPropertyValue('--trace').trim()||'#5eead4';
+    c2.strokeStyle=trace; c2.lineWidth=2; c2.beginPath();
+    if(analyser&&playing){
+      var buf=new Float32Array(analyser.fftSize); analyser.getFloatTimeDomainData(buf);
+      var s=0; for(var i=1;i<buf.length/2;i++){if(buf[i-1]<0&&buf[i]>=0){s=i;break}}
+      var n=Math.min(buf.length-s,Math.max(64,Math.round(ctx.sampleRate/freq*3)));
+      var amp=Math.max(0.02,level()*2);
+      for(var j=0;j<n;j++){
+        var x=j/(n-1)*w, y=h/2-buf[s+j]/amp*(h*0.42);
+        j?c2.lineTo(x,y):c2.moveTo(x,y);
+      }
+    }else{c2.moveTo(0,h/2);c2.lineTo(w,h/2)}
+    c2.stroke();
+    requestAnimationFrame(draw);
+  }
+  setFreq(440);
+  draw();
+})();
+</script>
+</body>
+</html>
