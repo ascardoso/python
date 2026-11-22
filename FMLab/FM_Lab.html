@@ -1,0 +1,839 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FM Lab</title>
+
+<style>
+* { box-sizing: border-box }
+
+:root {
+  --bg: #0b1020;
+  --panel: #141e32;
+  --panel2: #0c1729;
+  --line: #293a54;
+  --text: #e7f0ff;
+  --muted: #90a5c3;
+  --cyan: #67d9ff;
+  --purple: #c5a5ff;
+  --green: #8cf0bb;
+}
+
+body {
+  margin: 0;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+  font: 13px system-ui, sans-serif;
+}
+
+button, input { font: inherit }
+
+button {
+  background: #20344f;
+  color: var(--text);
+  border: 1px solid #405574;
+  border-radius: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+
+button:hover { border-color: var(--cyan) }
+
+header {
+  height: 58px;
+  padding: 0 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--line);
+}
+
+.brand {
+  font-size: 20px;
+  letter-spacing: 4px;
+  font-weight: 750;
+}
+
+.subtitle {
+  color: var(--muted);
+  font-size: 11px;
+  margin-left: 10px;
+}
+
+.status {
+  color: var(--green);
+  font-size: 11px;
+  letter-spacing: 1px;
+}
+
+#app {
+  height: calc(100dvh - 58px);
+  padding: 10px;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) 112px;
+  gap: 10px;
+}
+
+.main {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 290px minmax(0, 1fr);
+  gap: 10px;
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  min-width: 0;
+  min-height: 0;
+  padding: 12px;
+}
+
+.left {
+  overflow: auto;
+}
+
+.sectionTitle {
+  font-size: 10px;
+  color: var(--muted);
+  letter-spacing: 1.7px;
+  margin-bottom: 10px;
+}
+
+.operator {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px;
+  margin-bottom: 8px;
+  background: var(--panel2);
+}
+
+.operator.selected {
+  border-color: var(--cyan);
+  box-shadow: inset 0 0 0 1px #67d9ff30;
+}
+
+.opHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.opName {
+  font-weight: 700;
+  letter-spacing: 1px;
+}
+
+.opRole {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.control {
+  margin: 10px 0;
+}
+
+.control label {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 5px;
+  color: #b7c7df;
+  font-size: 11px;
+}
+
+output { color: var(--cyan) }
+
+input[type=range] {
+  width: 100%;
+  accent-color: var(--cyan);
+  margin: 0;
+}
+
+.routing {
+  background: var(--panel2);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px;
+  margin-top: 10px;
+}
+
+.routeVisual {
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  padding: 8px 0;
+  gap: 4px;
+}
+
+.node {
+  width: 55px;
+  height: 55px;
+  border: 2px solid var(--purple);
+  color: var(--purple);
+  border-radius: 50%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  font-weight: bold;
+}
+
+.node.carrier {
+  border-color: var(--cyan);
+  color: var(--cyan);
+}
+
+.arrow {
+  color: var(--cyan);
+  font-size: 20px;
+}
+
+.right {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) minmax(0, 1fr) 105px;
+  gap: 10px;
+  min-height: 0;
+}
+
+.visualRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  min-height: 0;
+}
+
+.visual {
+  background: var(--panel2);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 9px;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.visual h3 {
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 1.5px;
+  margin: 0 0 7px;
+}
+
+canvas {
+  display: block;
+  width: 100%;
+  height: calc(100% - 20px);
+}
+
+.spectrogram canvas {
+  height: calc(100% - 20px);
+}
+
+.keyboardPanel {
+  padding: 8px 12px;
+}
+
+.keyboard {
+  height: 78px;
+  display: flex;
+  gap: 3px;
+}
+
+.key {
+  flex: 1;
+  background: linear-gradient(#f4f6fa, #c6d1e2);
+  color: #152239;
+  border: 0;
+  border-radius: 0 0 5px 5px;
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+  padding-bottom: 7px;
+  touch-action: none;
+  user-select: none;
+}
+
+.key.active {
+  background: var(--cyan);
+}
+
+.key small { font-size: 10px }
+
+.actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.stop { background: #542b41 }
+
+@media(max-width:900px) {
+  body { overflow: auto; height: auto }
+
+  #app {
+    height: auto;
+    display: block;
+  }
+
+  .main {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .left { overflow: visible }
+
+  .right {
+    height: 600px;
+    margin-top: 10px;
+  }
+
+  .keyboardPanel {
+    margin-top: 10px;
+  }
+}
+
+@media(max-height:760px) and (min-width:901px) {
+  header { height: 48px }
+  #app {
+    height: calc(100dvh - 48px);
+    padding: 7px;
+    grid-template-rows: minmax(0,1fr) 96px;
+    gap: 7px;
+  }
+
+  .main, .right { gap: 7px }
+  .panel { padding: 8px }
+  .operator { padding: 7px; margin-bottom: 5px }
+  .control { margin: 6px 0 }
+  .keyboard { height: 65px }
+}
+</style>
+</head>
+
+<body>
+
+<header>
+  <div>
+    <span class="brand">FM LAB</span>
+    <span class="subtitle">Visual frequency modulation</span>
+  </div>
+  <div class="actions">
+    <span class="status" id="status">READY</span>
+    <button id="stop" class="stop">STOP</button>
+  </div>
+</header>
+
+<div id="app">
+
+<div class="main">
+
+<!-- LEFT: CONTROLS -->
+<section class="panel left">
+
+<div class="sectionTitle">OPERATOR PARAMETERS</div>
+
+<div class="operator selected">
+  <div class="opHeader">
+    <span class="opName">B · MODULATOR</span>
+    <span class="opRole">Sine</span>
+  </div>
+
+  <div class="control">
+    <label>Frequency ratio <output id="ratioVal">2.00</output></label>
+    <input id="ratio" type="range" min=".1" max="10" step=".01" value="2">
+  </div>
+
+  <div class="control">
+    <label>Modulation depth <output id="depthVal">300 Hz</output></label>
+    <input id="depth" type="range" min="0" max="1500" value="300">
+  </div>
+</div>
+
+<div class="operator">
+  <div class="opHeader">
+    <span class="opName">C · CARRIER</span>
+    <span class="opRole">Output</span>
+  </div>
+
+  <div class="control">
+    <label>Frequency ratio <output id="carrierVal">1.00</output></label>
+    <input id="carrierRatio" type="range" min=".1" max="8" step=".01" value="1">
+  </div>
+
+  <div class="control">
+    <label>Attack <output id="attackVal">15 ms</output></label>
+    <input id="attack" type="range" min="1" max="1000" value="15">
+  </div>
+
+  <div class="control">
+    <label>Release <output id="releaseVal">250 ms</output></label>
+    <input id="release" type="range" min="20" max="2000" value="250">
+  </div>
+</div>
+
+<div class="control">
+  <label>Master volume <output id="volumeVal">30%</output></label>
+  <input id="volume" type="range" min="0" max="100" value="30">
+</div>
+
+<div class="routing">
+  <div class="sectionTitle">FM SIGNAL FLOW</div>
+  <div class="routeVisual">
+    <div class="node">B<small>MOD</small></div>
+    <span class="arrow">→</span>
+    <div class="node carrier">C<small>OUT</small></div>
+  </div>
+  <div style="text-align:center;color:var(--muted);font-size:10px">
+    Modulator changes carrier frequency
+  </div>
+</div>
+
+<div style="color:var(--muted);font-size:11px;margin-top:12px">
+  Hold a key and move the modulation-depth slider. Watch the spectrum change.
+</div>
+
+</section>
+
+<!-- RIGHT: VISUALIZATION -->
+<section class="right">
+
+<div class="visualRow">
+
+  <div class="visual">
+    <h3>FREQUENCY SPECTRUM</h3>
+    <canvas id="spectrum"></canvas>
+  </div>
+
+  <div class="visual">
+    <h3>OUTPUT WAVEFORM</h3>
+    <canvas id="wave"></canvas>
+  </div>
+
+</div>
+
+<div class="visualRow">
+
+  <div class="visual">
+    <h3>FM SIDEbands</h3>
+    <canvas id="sidebands"></canvas>
+  </div>
+
+  <div class="visual">
+    <h3>AMPLITUDE OVER TIME</h3>
+    <canvas id="envelope"></canvas>
+  </div>
+
+</div>
+
+<div class="visual spectrogram">
+  <h3>SPECTROGRAM · TIME EVOLUTION</h3>
+  <canvas id="spectrogram"></canvas>
+</div>
+
+</section>
+
+</div>
+
+<!-- KEYBOARD -->
+<section class="panel keyboardPanel">
+  <div class="sectionTitle">PLAY</div>
+  <div class="keyboard" id="keyboard"></div>
+</section>
+
+</div>
+
+<script>
+(() => {
+"use strict";
+
+const $ = id => document.getElementById(id);
+
+let audio = null;
+let analyser = null;
+let master = null;
+let activeVoices = new Map();
+let history = [];
+let playingFreq = 0;
+let heldKeys = new Set();
+
+const settings = {
+  modRatio: 2,
+  modDepth: 300,
+  carrierRatio: 1,
+  attack: .015,
+  release: .25,
+  volume: .30
+};
+
+const noteFreqs = [
+  261.63, 293.66, 329.63, 349.23,
+  392.00, 440.00, 493.88, 523.25
+];
+
+const noteNames = ["C4","D4","E4","F4","G4","A4","B4","C5"];
+
+function initAudio() {
+  if (audio) return;
+
+  audio = new AudioContext();
+
+  master = audio.createGain();
+  master.gain.value = settings.volume;
+
+  analyser = audio.createAnalyser();
+  analyser.fftSize = 2048;
+  analyser.smoothingTimeConstant = .75;
+
+  master.connect(analyser);
+  analyser.connect(audio.destination);
+
+  $("status").textContent = "AUDIO ACTIVE";
+
+  startVisualization();
+}
+
+function makeVoice(id, freq) {
+  initAudio();
+  audio.resume();
+
+  const mod = audio.createOscillator();
+  const modGain = audio.createGain();
+  const carrier = audio.createOscillator();
+  const amp = audio.createGain();
+
+  mod.type = "sine";
+  carrier.type = "sine";
+
+  mod.frequency.value = freq * settings.modRatio;
+  modGain.gain.value = settings.modDepth;
+
+  carrier.frequency.value = freq * settings.carrierRatio;
+  amp.gain.value = 0;
+
+  mod.connect(modGain);
+  modGain.connect(carrier.frequency);
+
+  carrier.connect(amp);
+  amp.connect(master);
+
+  mod.start();
+  carrier.start();
+
+  const now = audio.currentTime;
+
+  amp.gain.cancelScheduledValues(now);
+  amp.gain.setValueAtTime(0, now);
+  amp.gain.linearRampToValueAtTime(
+    .75,
+    now + settings.attack
+  );
+
+  return { mod, modGain, carrier, amp, freq };
+}
+
+function noteOn(id, freq) {
+  if (activeVoices.has(id)) return;
+
+  playingFreq = freq;
+  activeVoices.set(id, makeVoice(id, freq));
+  heldKeys.add(id);
+}
+
+function noteOff(id) {
+  const voice = activeVoices.get(id);
+  if (!voice || !audio) return;
+
+  const now = audio.currentTime;
+
+  voice.amp.gain.cancelScheduledValues(now);
+  voice.amp.gain.setTargetAtTime(0, now, Math.max(.02,settings.release/3));
+
+  activeVoices.delete(id);
+  heldKeys.delete(id);
+
+  setTimeout(() => {
+    try {
+      voice.mod.stop();
+      voice.carrier.stop();
+    } catch {}
+  }, settings.release * 1000 + 150);
+}
+
+function stopAll() {
+  [...activeVoices.keys()].forEach(noteOff);
+  heldKeys.clear();
+}
+
+function updateVoices() {
+  if (!audio) return;
+
+  const now = audio.currentTime;
+
+  activeVoices.forEach(v => {
+    v.mod.frequency.setTargetAtTime(
+      v.freq * settings.modRatio, now, .02
+    );
+
+    v.modGain.gain.setTargetAtTime(
+      settings.modDepth, now, .02
+    );
+
+    v.carrier.frequency.setTargetAtTime(
+      v.freq * settings.carrierRatio, now, .02
+    );
+  });
+}
+
+function bindSlider(id, fn) {
+  $(id).addEventListener("input", fn);
+}
+
+bindSlider("ratio", () => {
+  settings.modRatio = +$("ratio").value;
+  $("ratioVal").textContent = settings.modRatio.toFixed(2);
+  updateVoices();
+});
+
+bindSlider("depth", () => {
+  settings.modDepth = +$("depth").value;
+  $("depthVal").textContent = settings.modDepth + " Hz";
+  updateVoices();
+});
+
+bindSlider("carrierRatio", () => {
+  settings.carrierRatio = +$("carrierRatio").value;
+  $("carrierVal").textContent = settings.carrierRatio.toFixed(2);
+  updateVoices();
+});
+
+bindSlider("attack", () => {
+  settings.attack = +$("attack").value / 1000;
+  $("attackVal").textContent = $("attack").value + " ms";
+});
+
+bindSlider("release", () => {
+  settings.release = +$("release").value / 1000;
+  $("releaseVal").textContent = $("release").value + " ms";
+});
+
+bindSlider("volume", () => {
+  settings.volume = +$("volume").value / 100;
+  $("volumeVal").textContent = $("volume").value + "%";
+  if (master) master.gain.setTargetAtTime(settings.volume,audio.currentTime,.02);
+});
+
+$("stop").addEventListener("click", stopAll);
+
+// Keyboard creation
+noteFreqs.forEach((freq,i) => {
+  const key = document.createElement("button");
+  key.className = "key";
+  key.innerHTML = `<small>${noteNames[i]}</small>`;
+
+  key.addEventListener("pointerdown",e => {
+    e.preventDefault();
+    key.setPointerCapture(e.pointerId);
+    key.classList.add("active");
+    noteOn("mouse"+i,freq);
+  });
+
+  const release = () => {
+    key.classList.remove("active");
+    noteOff("mouse"+i);
+  };
+
+  key.addEventListener("pointerup",release);
+  key.addEventListener("pointercancel",release);
+  key.addEventListener("lostpointercapture",release);
+
+  $("keyboard").appendChild(key);
+});
+
+// Computer keyboard: A S D F G H J K
+const computerKeys = {
+  a:0, s:1, d:2, f:3,
+  g:4, h:5, j:6, k:7
+};
+
+document.addEventListener("keydown",e => {
+  if (e.repeat || e.target.tagName === "INPUT") return;
+
+  const index = computerKeys[e.key.toLowerCase()];
+  if (index === undefined) return;
+
+  noteOn("computer"+index,noteFreqs[index]);
+  $("keyboard").children[index].classList.add("active");
+});
+
+document.addEventListener("keyup",e => {
+  const index = computerKeys[e.key.toLowerCase()];
+  if (index === undefined) return;
+
+  noteOff("computer"+index);
+  $("keyboard").children[index].classList.remove("active");
+});
+
+document.addEventListener("blur",stopAll);
+
+// Canvas utilities
+function setupCanvas(canvas) {
+  const rect = canvas.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+
+  canvas.width = Math.max(1,Math.floor(rect.width*dpr));
+  canvas.height = Math.max(1,Math.floor(rect.height*dpr));
+
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+
+  return {ctx,w:rect.width,h:rect.height};
+}
+
+function background(ctx,w,h) {
+  ctx.fillStyle = "#0c1729";
+  ctx.fillRect(0,0,w,h);
+}
+
+function startVisualization() {
+  const spectrumCanvas = $("spectrum");
+  const waveCanvas = $("wave");
+  const sideCanvas = $("sidebands");
+  const envCanvas = $("envelope");
+  const specCanvas = $("spectrogram");
+
+  let spectrogramHistory = [];
+
+  function draw() {
+    if (!analyser) return;
+
+    const sd = setupCanvas(spectrumCanvas);
+    const wd = setupCanvas(waveCanvas);
+    const bd = setupCanvas(sideCanvas);
+    const ed = setupCanvas(envCanvas);
+    const gd = setupCanvas(specCanvas);
+
+    const freq = new Uint8Array(analyser.frequencyBinCount);
+    const time = new Uint8Array(analyser.fftSize);
+
+    analyser.getByteFrequencyData(freq);
+    analyser.getByteTimeDomainData(time);
+
+    // Spectrum
+    background(sd.ctx,sd.w,sd.h);
+
+    sd.ctx.strokeStyle = "#203550";
+    for(let i=1;i<5;i++){
+      const y=sd.h*i/5;
+      sd.ctx.beginPath();
+      sd.ctx.moveTo(0,y);
+      sd.ctx.lineTo(sd.w,y);
+      sd.ctx.stroke();
+    }
+
+    const maxBins = 220;
+    const barW = sd.w/maxBins;
+
+    for(let i=0;i<maxBins;i++){
+      const v=freq[i]/255;
+      const h=v*sd.h;
+
+      sd.ctx.fillStyle=`hsl(${195-v*70},85%,${35+v*30}%)`;
+      sd.ctx.fillRect(i*barW,sd.h-h,Math.max(1,barW-1),h);
+    }
+
+    // Waveform
+    background(wd.ctx,wd.w,wd.h);
+    wd.ctx.strokeStyle="#67d9ff";
+    wd.ctx.lineWidth=1.5;
+    wd.ctx.beginPath();
+
+    for(let i=0;i<time.length;i++){
+      const x=i/time.length*wd.w;
+      const y=time[i]/255*wd.h;
+      if(i===0)wd.ctx.moveTo(x,y);
+      else wd.ctx.lineTo(x,y);
+    }
+    wd.ctx.stroke();
+
+    // Sideband / peak visualization
+    background(bd.ctx,bd.w,bd.h);
+
+    const center = playingFreq || 261.63;
+    const spacing = center*(settings.modRatio);
+    const sidebandCount = Math.min(12,Math.floor(settings.modDepth/Math.max(1,spacing))+5);
+
+    bd.ctx.strokeStyle="#c5a5ff";
+    bd.ctx.fillStyle="#c5a5ff";
+    bd.ctx.lineWidth=2;
+
+    for(let n=-sidebandCount;n<=sidebandCount;n++){
+      const f=Math.abs(center+n*spacing);
+      const x=(f%6000)/6000*bd.w;
+      const strength=Math.max(0,1-Math.abs(n)/(sidebandCount+1));
+      const h=strength*bd.h*.8;
+
+      bd.ctx.beginPath();
+      bd.ctx.moveTo(x,bd.h);
+      bd.ctx.lineTo(x,bd.h-h);
+      bd.ctx.stroke();
+    }
+
+    // Amplitude
+    background(ed.ctx,ed.w,ed.h);
+    ed.ctx.strokeStyle="#8cf0bb";
+    ed.ctx.lineWidth=2;
+    ed.ctx.beginPath();
+
+    const active=activeVoices.size>0;
+    const amp=active?.8:0;
+
+    for(let i=0;i<100;i++){
+      const x=i/99*ed.w;
+      const envelope=amp*Math.exp(-i/35);
+      const y=ed.h/2-envelope*ed.h/2;
+      if(i===0)ed.ctx.moveTo(x,y);
+      else ed.ctx.lineTo(x,y);
+    }
+    ed.ctx.stroke();
+
+    // Spectrogram history
+    const slice=new Uint8Array(140);
+    for(let i=0;i<140;i++)slice[i]=freq[i]||0;
+
+    spectrogramHistory.push(slice);
+    if(spectrogramHistory.length>240)spectrogramHistory.shift();
+
+    background(gd.ctx,gd.w,gd.h);
+
+    const colW=gd.w/240;
+    for(let x=0;x<spectrogramHistory.length;x++){
+      for(let y=0;y<140;y++){
+        const v=spectrogramHistory[x][y]/255;
+        gd.ctx.fillStyle=`hsl(${220-v*190},90%,${8+v*65}%)`;
+        gd.ctx.fillRect(x*colW,gd.h-y*gd.h/140,colW+1,gd.h/140+1);
+      }
+    }
+
+    requestAnimationFrame(draw);
+  }
+
+  draw();
+}
+
+// Initialize audio only after user interaction.
+// Browser autoplay restrictions are respected.
+
+})();
+</script>
+
+</body>
+</html>
+
