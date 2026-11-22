@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Brain Music Live</title>
+<style>
+:root{--bg:#eaf0ec;--panel:#f8fbf9;--ink:#16302a;--dim:#587267;--line:#bccfc6;--a:#0f766e;--b:#b45309;--grid:#d6e2db;--bad:#b91c1c;color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0e1b18;--panel:#152622;--ink:#e0efe9;--dim:#88a699;--line:#2b4540;--a:#4fd1c0;--b:#fbbf6a;--grid:#213631;--bad:#f87171;color-scheme:dark}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:940px;margin:0 auto;padding:20px 16px 40px}
+h1{font:600 clamp(26px,5vw,38px)/1.1 Georgia,"Iowan Old Style",serif;margin:8px 0 6px}
+h2{font:600 16px/1.3 ui-sans-serif,system-ui,sans-serif;margin:0 0 10px}
+.lede,.note{color:var(--dim)}.note{font-size:13px;margin:8px 0 0}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px;margin-bottom:14px}
+.bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+button,select,input{font:inherit;color:var(--ink)}
+.btn{padding:9px 14px;border:1px solid var(--line);border-radius:6px;background:transparent;cursor:pointer}
+.btn.main{background:var(--a);color:var(--bg);border-color:var(--a);font-weight:600}
+select{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:7px}
+input[type=range]{accent-color:var(--a)}
+label.o{display:flex;gap:6px;align-items:center;font-size:14px}
+#status{font-size:14px;margin-top:10px;font-variant-numeric:tabular-nums}
+.bad{color:var(--bad);font-weight:600}.ok{color:var(--a);font-weight:600}
+.band{display:grid;grid-template-columns:90px 1fr 48px;gap:10px;align-items:center;margin:6px 0;font-size:14px}
+.meter{height:10px;border-radius:5px;background:var(--grid);overflow:hidden}.meter i{display:block;height:100%;width:0;background:var(--a)}
+canvas{width:100%;height:150px;display:block;border:1px solid var(--line);border-radius:6px;background:var(--panel)}
+.two{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}
+button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--b);outline-offset:2px}
+</style>
+</head>
+<body>
+<main>
+<h1>Brain Music Live</h1>
+<p class="lede">Reads an OpenEEG-style board (P2 protocol), turns the signal into five band strengths measured against your own baseline, and plays them as instruments. It is for fun and exploration, not a medical or diagnostic tool.</p>
+
+<div class="panel">
+  <div class="bar">
+    <button class="btn main" id="snd" type="button">1. Start sound</button>
+    <button class="btn main" id="conn" type="button">2. Connect board</button>
+    <button class="btn" id="cal" type="button">Calibrate (45 s, relax)</button>
+    <label class="o"><input type="checkbox" id="demo" checked> Demo mode when no board</label>
+  </div>
+  <div id="status">Not connected.</div>
+  <p class="note">Needs Chrome or Edge on a computer, opened from a file or a regular web page. Keep the board on battery and your laptop unplugged while electrodes are on you. Wait about 30 seconds after connecting for the signal to settle.</p>
+</div>
+
+<div class="panel" id="bands"><h2>Band strength (0 = below your usual, 1 = well above)</h2></div>
+
+<div class="two">
+  <div class="panel"><h2>Spectrum (0–45 Hz)</h2><canvas id="spec" width="600" height="300"></canvas></div>
+  <div class="panel"><h2>Filtered signal (2 s)</h2><canvas id="trace" width="600" height="300"></canvas></div>
+</div>
+
+<div class="panel">
+  <div class="bar">
+    <label class="o">Channel <select id="chan"><option value="0">1</option><option value="1">2</option><option value="2">Average</option></select></label>
+    <label class="o">Mains <select id="mains"><option value="60">60 Hz</option><option value="50">50 Hz</option></select></label>
+    <label class="o">Scale <select id="scale"><option value="0">Major pentatonic</option><option value="1">Minor pentatonic</option><option value="2">Whole tone</option></select></label>
+    <label class="o">Volume <input type="range" id="vol" min="0" max="1" step="0.01" value="0.6"></label>
+    <label class="o">Reject above <input type="range" id="thr" min="20" max="400" step="10" value="150"><output id="thro">150</output> counts</label>
+  </div>
+  <p class="note">Alpha (eyes closed) is the band most likely to respond clearly. Gamma at the scalp is weak and often muscle noise, so treat it as texture. When the signal is flagged bad (clipping or large movement), the music holds its last clean values.</p>
+</div>
+</main>
+
+<script>
+const $=id=>document.getElementById(id);
+const FS=256,N=512,HOP=32;
+const BANDS=[['Delta',1,4],['Theta',4,8],['Alpha',8,13],['Beta',13,30],['Gamma',30,40]];
+const SCALES=[[0,2,4,7,9],[0,3,5,7,10],[0,2,4,6,8,10]];
+const BASE=[0,0,72,84,96],RATE=[0,0,.2,.22,.12];
+const tgt=[.4,.4,.4,.4,.2],sm=tgt.slice();
+const meters=[],vals=[];
+BANDS.forEach((b,i)=>{
+  const d=document.createElement('div');d.className='band';
+  d.innerHTML=`<span>${b[0]}<br><small style="color:var(--dim)">${b[1]}–${b[2]} Hz</small></span><div class="meter"><i></i></div><span class="v">0.00</span>`;
+  $('bands').appendChild(d);meters.push(d.querySelector('i'));vals.push(d.querySelector('.v'));
+});
+$('thr').oninput=()=>$('thro').textContent=$('thr').value;
+
+/* ---------- DSP ---------- */
+function bq(type,f0,Q){
+  const w=2*Math.PI*f0/FS,c=Math.cos(w),al=Math.sin(w)/(2*Q);let b0,b1,b2;
+  if(type==='n'){b0=1;b1=-2*c;b2=1}
+  else if(type==='l'){b0=(1-c)/2;b1=1-c;b2=b0}
+  else{b0=(1+c)/2;b1=-(1+c);b2=b0}
+  const a0=1+al;return{b0:b0/a0,b1:b1/a0,b2:b2/a0,a1:-2*c/a0,a2:(1-al)/a0,z1:0,z2:0};
+}
+const mkChain=()=>[bq('h',.7,.707),bq('n',+$('mains').value,30),bq('l',45,.707)];
+let chains=[mkChain(),mkChain()];
+$('mains').onchange=()=>{chains=[mkChain(),mkChain()]};
+function run(ch,x){for(const s of ch){const y=s.b0*x+s.z1;s.z1=s.b1*x-s.a1*y+s.z2;s.z2=s.b2*x-s.a2*y;x=y}return x}
+function fft(re,im){
+  const n=re.length;
+  for(let i=1,j=0;i<n;i++){let bit=n>>1;for(;j&bit;bit>>=1)j^=bit;j^=bit;if(i<j){[re[i],re[j]]=[re[j],re[i]];[im[i],im[j]]=[im[j],im[i]]}}
+  for(let len=2;len<=n;len<<=1){
+    const ang=-2*Math.PI/len,wr=Math.cos(ang),wi=Math.sin(ang);
+    for(let i=0;i<n;i+=len){let cr=1,ci=0;
+      for(let k=0;k<len/2;k++){
+        const a=i+k,b=a+len/2,tr=re[b]*cr-im[b]*ci,ti=re[b]*ci+im[b]*cr;
+        re[b]=re[a]-tr;im[b]=im[a]-ti;re[a]+=tr;im[a]+=ti;
+        const t=cr*wr-ci*wi;ci=cr*wi+ci*wr;cr=t;
+      }}}
+}
+const hann=Float64Array.from({length:N},(_,i)=>.5-.5*Math.cos(2*Math.PI*i/(N-1)));
+const ring=new Float32Array(N),rails=new Uint8Array(FS);
+let n=0,spec=new Float64Array(N/2),base=BANDS.map(()=>({m:0,v:.05,init:false}));
+let rate=.0007,calUntil=0,settleUntil=0,connected=false,good=true,pps=0,ppsT=performance.now(),pc=0,drop=0,last=-1,railPct=0,sdev=0;
+
+function analyze(){
+  const re=new Float64Array(N),im=new Float64Array(N);
+  for(let i=0;i<N;i++)re[i]=ring[(n+i)%N]*hann[i];
+  fft(re,im);
+  for(let k=0;k<N/2;k++)spec[k]=re[k]*re[k]+im[k]*im[k];
+  let s=0,s2=0;for(let i=0;i<FS;i++){const v=ring[(n+N-FS+i)%N];s+=v;s2+=v*v}
+  sdev=Math.sqrt(Math.max(0,s2/FS-(s/FS)**2));
+  railPct=0;for(let i=0;i<FS;i++)railPct+=rails[i];railPct=railPct/FS*100;
+  good=railPct<3&&sdev<+$('thr').value;
+  if(performance.now()<settleUntil||!good)return;
+  const cal=performance.now()<calUntil,r=cal?.01:rate;
+  BANDS.forEach((b,i)=>{
+    let p=0;for(let k=Math.round(b[1]*2);k<Math.round(b[2]*2);k++)p+=spec[k];
+    const x=Math.log10(p+1e-9),B=base[i];
+    if(!B.init){B.m=x;B.init=true}
+    const d=x-B.m;B.m+=r*d;B.v=(1-r)*(B.v+r*d*d);
+    tgt[i]=1/(1+Math.exp(-1.3*d/Math.max(.15,Math.sqrt(B.v))));
+  });
+}
+function onSample(c0,c1){
+  const sel=+$('chan').value,x0=run(chains[0],c0-512),x1=run(chains[1],c1-512);
+  ring[n%N]=sel===0?x0:sel===1?x1:(x0+x1)/2;
+  const rc=sel===0?c0:sel===1?c1:(c0>=1021||c0<=2)?c0:c1;
+  rails[n%FS]=(rc<=2||rc>=1021)?1:0;
+  n++;
+  if(n>=N&&n%HOP===0)analyze();
+}
+
+/* ---------- P2 parser + Web Serial ---------- */
+let buf=[];
+function feed(bytes){
+  for(const b of bytes)buf.push(b);
+  while(buf.length>=17){
+    if(buf[0]===0xA5&&buf[1]===0x5A&&buf[2]===2){
+      const cnt=buf[3];if(last>=0&&cnt!==((last+1)&255))drop++;last=cnt;
+      onSample(buf[4]*256+buf[5],buf[6]*256+buf[7]);pc++;buf.splice(0,17);
+    }else buf.shift();
+  }
+}
+$('conn').onclick=async()=>{
+  if(!('serial' in navigator)){$('status').innerHTML='<span class="bad">Web Serial is not available here.</span> Open this file in Chrome or Edge on a computer.';return}
+  try{
+    const port=await navigator.serial.requestPort();
+    await port.open({baudRate:57600});
+    connected=true;settleUntil=performance.now()+30000;n=0;last=-1;
+    $('conn').textContent='Connected';
+    const rd=port.readable.getReader();
+    for(;;){const {value,done}=await rd.read();if(done)break;feed(value)}
+  }catch(e){$('status').innerHTML='<span class="bad">Serial error:</span> '+e.message}
+  connected=false;$('conn').textContent='2. Connect board';
+};
+$('cal').onclick=()=>{calUntil=performance.now()+45000;base.forEach(b=>b.init=false)};
+
+/* ---------- audio ---------- */
+let ctx,master,bus,dron;
+$('snd').onclick=()=>{
+  $('snd').hidden=true;
+  ctx=new (window.AudioContext||window.webkitAudioContext)();
+  master=ctx.createGain();master.gain.value=+$('vol').value;
+  const comp=ctx.createDynamicsCompressor();bus=ctx.createGain();
+  const rv=ctx.createConvolver(),len=ctx.sampleRate*2.6,ib=ctx.createBuffer(2,len,ctx.sampleRate);
+  for(let c=0;c<2;c++){const d=ib.getChannelData(c);for(let i=0;i<len;i++)d[i]=(Math.random()*2-1)*Math.pow(1-i/len,3)}
+  rv.buffer=ib;const wet=ctx.createGain();wet.gain.value=.4;
+  bus.connect(master);bus.connect(rv);rv.connect(wet);wet.connect(master);master.connect(comp);comp.connect(ctx.destination);
+  const mk=(f,t,det,d)=>{const o=ctx.createOscillator();o.type=t;o.frequency.value=f;o.detune.value=det;o.connect(d);o.start()};
+  const gD=ctx.createGain(),gT=ctx.createGain(),lp=ctx.createBiquadFilter();
+  gD.gain.value=0;gT.gain.value=0;lp.type='lowpass';lp.frequency.value=900;
+  mk(65.41,'sine',0,gD);mk(98,'sine',0,gD);
+  [130.81,196,293.66].forEach(f=>{mk(f,'sawtooth',-6,lp);mk(f,'sawtooth',6,lp)});
+  lp.connect(gT);gD.connect(bus);gT.connect(bus);dron=[gD,gT];
+};
+$('vol').oninput=()=>{if(master)master.gain.value=+$('vol').value};
+function env(g,t,a,d,pk){g.gain.setValueAtTime(.0001,t);g.gain.linearRampToValueAtTime(pk,t+a);g.gain.exponentialRampToValueAtTime(.0001,t+a+d)}
+function voice(i,m){
+  const t=ctx.currentTime,f=440*Math.pow(2,(m-69)/12),g=ctx.createGain();g.connect(bus);
+  const o=ctx.createOscillator();o.frequency.value=f;
+  if(i===2){
+    const o2=ctx.createOscillator(),g2=ctx.createGain(),lf=ctx.createOscillator(),lg=ctx.createGain();
+    o2.frequency.value=f*2;g2.gain.value=.15;lf.frequency.value=5;lg.gain.value=f*.006;
+    lf.connect(lg);lg.connect(o.frequency);lg.connect(o2.frequency);o.connect(g);o2.connect(g2);g2.connect(g);
+    env(g,t,.07,1.1,.22);[o,o2,lf].forEach(x=>{x.start(t);x.stop(t+1.4)});
+  }else if(i===3){
+    const md=ctx.createOscillator(),mg=ctx.createGain();md.frequency.value=f*3.5;
+    mg.gain.setValueAtTime(f*2,t);mg.gain.exponentialRampToValueAtTime(1,t+1.4);md.connect(mg);mg.connect(o.frequency);o.connect(g);
+    env(g,t,.005,1.6,.2);o.start(t);md.start(t);o.stop(t+1.8);md.stop(t+1.8);
+  }else{
+    const o2=ctx.createOscillator(),g2=ctx.createGain();o2.frequency.value=f*2.01;g2.gain.value=.3;o.connect(g);o2.connect(g2);g2.connect(g);
+    env(g,t,.004,.5,.08);o.start(t);o2.start(t);o.stop(t+.7);o2.stop(t+.7);
+  }
+}
+const idx=[4,4,4];
+setInterval(()=>{
+  if(!ctx)return;
+  const sc=SCALES[+$('scale').value];
+  dron[0].gain.setTargetAtTime(.35*sm[0],ctx.currentTime,.2);
+  dron[1].gain.setTargetAtTime(.12*sm[1],ctx.currentTime,.2);
+  for(let k=2;k<5;k++){
+    const p=sm[k],j=k-2;
+    if(p>.12&&Math.random()<p*p*RATE[k]*1.6){
+      idx[j]=Math.max(0,Math.min(sc.length*2-1,idx[j]+Math.floor(Math.random()*5)-2));
+      voice(k,BASE[k]+12*Math.floor(idx[j]/sc.length)+sc[idx[j]%sc.length]);
+    }
+  }
+},125);
+
+/* ---------- display loop ---------- */
+const sc2=$('spec').getContext('2d'),tc=$('trace').getContext('2d');
+const css=v=>getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+let demoT=[.4,.4,.4,.4,.2];
+function frame(){
+  requestAnimationFrame(frame);
+  const now=performance.now();
+  if(!connected&&$('demo').checked){
+    for(let i=0;i<5;i++){demoT[i]=Math.max(0,Math.min(1,demoT[i]+(Math.random()-.5)*.03+(.4-demoT[i])*.004));tgt[i]=demoT[i]}
+  }
+  for(let i=0;i<5;i++){sm[i]+=(tgt[i]-sm[i])*.05;meters[i].style.width=sm[i]*100+'%';vals[i].textContent=sm[i].toFixed(2)}
+  if(now-ppsT>1000){pps=pc;pc=0;ppsT=now}
+  if(connected){
+    const wait=Math.max(0,Math.ceil((settleUntil-now)/1000)),cal=Math.max(0,Math.ceil((calUntil-now)/1000));
+    $('status').innerHTML=`${pps} packets/s, ${drop} dropped · rails ${railPct.toFixed(0)}% · signal std ${sdev.toFixed(0)} · `+
+      (wait?`<b>settling ${wait} s</b>`:good?'<span class="ok">signal OK</span>':'<span class="bad">signal flagged (holding last clean values)</span>')+(cal?` · calibrating ${cal} s`:'');
+  }else $('status').textContent=$('demo').checked?'Demo mode: simulated drifting values, no board connected.':'Not connected.';
+  const W=600,H=300;
+  sc2.clearRect(0,0,W,H);
+  if(connected&&n>=N){
+    const mx=Math.max(1e-9,...Array.from(spec.slice(2,90)).map(v=>Math.log10(v+1e-9)));
+    sc2.strokeStyle=css('--a');sc2.lineWidth=2;sc2.beginPath();
+    for(let k=2;k<90;k++){const x=k/90*W,y=H-Math.max(0,Math.min(1,(Math.log10(spec[k]+1e-9)-(mx-6))/6))*H;k>2?sc2.lineTo(x,y):sc2.moveTo(x,y)}
+    sc2.stroke();
+  }
+  sc2.fillStyle=css('--dim');sc2.font='16px sans-serif';
+  [10,20,30,40].forEach(f=>{sc2.fillText(f,f*2/90*W,H-6)});
+  tc.clearRect(0,0,W,H);
+  if(connected&&n>=N){
+    let mx=5;for(let i=0;i<N;i++)mx=Math.max(mx,Math.abs(ring[i]));
+    tc.strokeStyle=css('--b');tc.lineWidth=2;tc.beginPath();
+    for(let i=0;i<N;i++){const x=i/N*W,y=H/2-ring[(n+i)%N]/mx*H*.45;i?tc.lineTo(x,y):tc.moveTo(x,y)}
+    tc.stroke();
+  }
+}
+frame();
+</script>
+</body>
+</html>
