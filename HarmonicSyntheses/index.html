@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Harmonic Evolution Studio</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="app">
+    <header>
+      <div>
+        <p class="eyebrow">ADDITIVE SYNTHESIS LAB</p>
+        <h1>Harmonic Evolution Studio</h1>
+        <p class="subtitle">Draw how each harmonic changes through the life of a note.</p>
+      </div>
+      <div class="status"><span id="statusDot"></span><span id="statusText">Ready</span></div>
+    </header>
+
+    <section class="transport panel">
+      <div class="control">
+        <label for="fundamental">Fundamental frequency</label>
+        <div class="inline"><input id="fundamental" type="range" min="80" max="880" value="440"><output id="fundamentalValue">440 Hz</output></div>
+      </div>
+      <div class="control duration">
+        <label for="duration">Note duration</label>
+        <div class="inline"><input id="duration" type="range" min="1" max="8" step=".5" value="3"><output id="durationValue">3.0 s</output></div>
+      </div>
+      <div class="control volume">
+        <label for="volume">Master level</label>
+        <div class="inline"><input id="volume" type="range" min="0" max=".8" step=".01" value=".22"><output id="volumeValue">22%</output></div>
+      </div>
+      <div class="buttons">
+        <button id="playButton" class="primary">▶ Play note</button>
+        <button id="stopButton">■ Stop</button>
+        <button id="resetButton">Reset curves</button>
+      </div>
+    </section>
+
+    <section class="panel editor-panel">
+      <div class="section-heading">
+        <div>
+          <h2>Harmonic envelope editor</h2>
+          <p>Choose a harmonic, then draw its amplitude over time.</p>
+        </div>
+        <div class="editor-tools">
+          <label class="toggle"><input type="checkbox" id="showAll" checked> Show other curves</label>
+          <button id="flatButton" class="small">Flat curve</button>
+        </div>
+      </div>
+      <div class="harmonics" id="harmonicButtons" aria-label="Choose harmonic"></div>
+      <div class="canvas-wrap">
+        <canvas id="envelopeCanvas" aria-label="Amplitude envelope drawing area"></canvas>
+        <div class="axis-label y-axis">AMPLITUDE</div>
+        <div class="axis-label x-axis">TIME →</div>
+      </div>
+      <div class="canvas-legend">
+        <span><i class="legend-line active-line"></i> Selected harmonic</span>
+        <span><i class="legend-line ghost-line"></i> Other harmonics</span>
+        <span class="hint">Drag to draw · amplitude runs from 0 to 1</span>
+      </div>
+    </section>
+
+    <section class="visuals">
+      <div class="panel visual-panel">
+        <div class="section-heading compact"><div><h2>Waveform</h2><p>Combined signal, live</p></div><span class="live-tag">LIVE</span></div>
+        <canvas id="waveCanvas"></canvas>
+      </div>
+      <div class="panel visual-panel">
+        <div class="section-heading compact"><div><h2>Frequency spectrum</h2><p>Current harmonic energy</p></div><span class="live-tag">FFT</span></div>
+        <canvas id="spectrumCanvas"></canvas>
+      </div>
+    </section>
+
+    <footer>
+      <span>16 sine-wave oscillators · Web Audio API · No audio files required</span>
+      <span>Tip: make upper harmonics decay faster for a softer tone.</span>
+    </footer>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>
