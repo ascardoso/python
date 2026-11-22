@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WAV Share</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="app">
+    <header class="top">
+      <div class="brand-mark">♫</div>
+      <div><h1>WAV Share</h1><p>Listen to the collection, right in your browser.</p></div>
+    <button id="refresh" class="quiet" title="Refresh library">↻</button>
+  </header>
+
+  <section class="player-card">
+    <div class="now-label">NOW PLAYING</div>
+    <div id="currentTitle" class="current-title">Choose a track to begin</div>
+    <div id="meta" class="meta">WAV audio · Browser playback</div>
+    <audio id="audio" controls preload="metadata"></audio>
+    <div class="playback-tip">Playback is streamed from the server. Use the audio controls to play, pause, seek, and adjust volume.</div>
+  </section>
+
+
+  <section class="library-card">
+    <div class="library-heading"><h2>Audio library</h2><span id="count" class="count">0 tracks</span></div>
+    <input id="search" type="search" placeholder="Search audio files…" aria-label="Search audio files">
+    <div id="list" class="track-list"></div>
+    <div id="empty" class="empty" hidden>No WAV files found. Add files to the server's <code>public/audio</code> folder.</div>
+  </section>
+
+
+  <details class="upload-card">
+    <summary>Upload WAV files <span class="private-note">(protected)</span></summary>
+    <p>Uploads require the server's upload token. Files are added to the public listening library.</p>
+    <form id="uploadForm">
+      <label class="file-picker">Choose WAV files<input id="fileInput" type="file" accept=".wav,audio/wav" multiple></label>
+      <label>Upload token<input id="token" type="password" autocomplete="off" placeholder="Server upload token"></label>
+      <button type="submit" class="upload-button">Upload selected files</button>
+    </form>
+    <div id="uploadStatus" role="status"></div>
+  </details>
+  <footer>WAV Share · Simple browser-based audio listening</footer>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>
