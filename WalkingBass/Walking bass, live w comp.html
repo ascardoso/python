@@ -41,6 +41,7 @@ output{text-align:right;font-variant-numeric:tabular-nums;color:var(--mute)}
 <label>Seed <input type="number" id="seed"></label>
 <button class="alt" id="dl">Export MIDI</button></div>
 <p id="msg"></p>
+<textarea id="b64" readonly hidden rows="4" style="width:100%;font:12px monospace;margin-bottom:8px" aria-label="MIDI file as base64 text"></textarea>
 <canvas id="cv" aria-label="Piano roll of the generated bass line"></canvas>
 <div class="key"><i style="background:var(--acc)"></i>chord-tone arrival<i style="background:var(--ink)"></i>passing<i style="background:var(--amb)"></i>chromatic approach<i style="border:1px solid var(--mute)"></i>straight-grid position<i style="background:var(--mute);height:5px"></i>piano hit</div>
 <div class="cols"><section><h2>Feel</h2><p>Applies to every note as it is scheduled.</p><div id="feel"></div></section>
@@ -162,7 +163,7 @@ function zip(name,b){const n=[...new TextEncoder().encode(name)],c=crc(b),Z=b.le
 w(0x04034b50,4);w(20,2);w(0,2);w(0,2);w(0,2);w(33,2);w(c,4);w(Z,4);w(Z,4);w(n.length,2);w(0,2);o.push(...n,...b);const cd=o.length;
 w(0x02014b50,4);w(20,2);w(20,2);w(0,2);w(0,2);w(0,2);w(33,2);w(c,4);w(Z,4);w(Z,4);w(n.length,2);w(0,2);w(0,2);w(0,2);w(0,2);w(0,4);w(0,4);o.push(...n);
 const cl=o.length-cd;w(0x06054b50,4);w(0,2);w(0,2);w(1,2);w(1,2);w(cl,4);w(cd,4);w(0,2);return new Uint8Array(o)}
-document.getElementById('dl').onclick=async()=>{try{const d=await window.claude?.use('downloads');if(!d){msg.textContent='Saving files is not available in this view.';return}await d.save({filename:'walking-bass.zip',data:zip('walking-bass.mid',midi())});msg.textContent='Saved. Unzip it to get walking-bass.mid.'}catch(e){msg.textContent=e&&e.code=='declined'?'':'Could not save: '+((e&&e.message)||e)}};
+document.getElementById('dl').onclick=async()=>{try{const d=await window.claude?.use('downloads');if(!d){const t=document.getElementById('b64');t.value=btoa(String.fromCharCode(...midi()));t.hidden=false;t.select();msg.textContent='Saving files is not available in this view, so the MIDI file is shown below as base64 text. Copy it and decode it to a file, for example: pbpaste | base64 -d > walking-bass.mid. Opening the page full-screen in claude.ai may enable the Export button to save directly.';return}await d.save({filename:'walking-bass.zip',data:zip('walking-bass.mid',midi())});msg.textContent='Saved. Unzip it to get walking-bass.mid.'}catch(e){msg.textContent=e&&e.code=='declined'?'':'Could not save: '+((e&&e.message)||e)}};
 const pb=document.getElementById('play');
 pb.onclick=async()=>{if(timer){clearInterval(timer);timer=0;pb.textContent='Play';return}
 if(!ac)init();await ac.resume();restart();G={t:ac.currentTime+.1,b:0};timer=setInterval(tick,25);pb.textContent='Stop'};
