@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Virtual Analog Lab</title>
+<style>
+:root{--bg:#e8eef2;--panel:#f7fafb;--ink:#14213d;--dim:#5b6b7e;--line:#b9c6d2;--a:#1d4ed8;--b:#c2410c;--grid:#d3dde5;color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0f1a24;--panel:#16232f;--ink:#e2ebf2;--dim:#8da0b3;--line:#2c3d4d;--a:#6cb6ff;--b:#ffa86b;--grid:#223342;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#0f1a24;--panel:#16232f;--ink:#e2ebf2;--dim:#8da0b3;--line:#2c3d4d;--a:#6cb6ff;--b:#ffa86b;--grid:#223342;color-scheme:dark}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:920px;margin:0 auto;padding:20px 16px 40px}
+h1{font:600 clamp(26px,5vw,38px)/1.1 Georgia,"Iowan Old Style",serif;margin:8px 0 6px}
+.lede{color:var(--dim);max-width:60ch;margin:0 0 18px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px;margin-bottom:14px}
+.row{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px}
+label.s{display:block;font-size:13px;color:var(--dim)}
+label.s b{color:var(--ink);font-weight:600}
+output{float:right;font-variant-numeric:tabular-nums;color:var(--ink)}
+input[type=range]{width:100%;accent-color:var(--a)}
+.seg{display:flex;border:1px solid var(--line);border-radius:6px;overflow:hidden;margin-top:6px}
+.seg button{flex:1;padding:8px 6px;background:transparent;color:var(--ink);border:0;font:inherit;font-size:13px;cursor:pointer}
+.seg button+button{border-left:1px solid var(--line)}
+.seg button[aria-pressed=true]{background:var(--a);color:var(--bg);font-weight:600}
+.note{font-size:13px;color:var(--dim);margin:8px 0 0}
+canvas{width:100%;height:170px;display:block;background:var(--panel);border:1px solid var(--line);border-radius:6px}
+.cap{font-size:13px;margin:0 0 6px;display:flex;justify-content:space-between;gap:8px;color:var(--dim)}
+.cap b{color:var(--ink)}
+#keys{display:flex;gap:4px;margin-top:8px;touch-action:none}
+#keys button{flex:1;height:64px;border:1px solid var(--line);border-radius:4px 4px 8px 8px;background:var(--panel);color:var(--dim);font:inherit;font-size:12px;cursor:pointer;padding:0;touch-action:none}
+#keys button.on,#keys button:active{background:var(--b);color:var(--bg);border-color:var(--b)}
+#keys button.sh{background:var(--ink);color:var(--bg);height:44px}
+#start{width:100%;padding:14px;background:var(--a);color:var(--bg);border:0;border-radius:8px;font:600 16px inherit;cursor:pointer;margin-bottom:14px}
+button:focus-visible,input:focus-visible{outline:2px solid var(--b);outline-offset:2px}
+.top{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.top label{font-size:13px;color:var(--dim);display:flex;gap:6px;align-items:center}
+</style>
+</head>
+<body>
+<main>
+<h1>Virtual Analog Lab</h1>
+<p class="lede">A sawtooth oscillator into a four-stage ladder filter, calculated sample by sample in your browser. Flip the switches below while a note plays and watch what changes in the spectrum.</p>
+
+<button id="start" type="button">Start audio (turn your volume down first)</button>
+
+<div class="panel">
+  <div class="row">
+    <div><label class="s"><b>Cutoff</b><output id="oc"></output><input id="cut" type="range" min="0" max="1000" value="520"></label></div>
+    <div><label class="s"><b>Resonance</b><output id="or"></output><input id="res" type="range" min="0" max="4.2" step="0.01" value="3.2"></label></div>
+    <div><label class="s"><b>Drive</b><output id="od"></output><input id="drv" type="range" min="1" max="10" step="0.1" value="3"></label></div>
+    <div><label class="s"><b>Envelope to cutoff</b><output id="oe"></output><input id="env" type="range" min="0" max="1" step="0.01" value="0.6"></label></div>
+  </div>
+  <div class="row" style="margin-top:14px">
+    <div>
+      <label class="s"><b>Oscillator</b></label>
+      <div class="seg" id="segOsc"><button type="button" data-v="0" aria-pressed="false">Naive saw</button><button type="button" data-v="1" aria-pressed="true">PolyBLEP saw</button></div>
+      <p class="note">The naive saw is the textbook formula. Its high harmonics fold back below the Nyquist limit as inharmonic noise.</p>
+    </div>
+    <div>
+      <label class="s"><b>Filter model</b></label>
+      <div class="seg" id="segFil"><button type="button" data-v="0" aria-pressed="false">Ideal (linear)</button><button type="button" data-v="1" aria-pressed="true">Ladder (saturating)</button></div>
+      <p class="note">The ladder bends each stage with tanh, like transistors. At full resonance it sings on its own, and drive thickens it.</p>
+    </div>
+  </div>
+</div>
+
+<div class="panel">
+  <div class="top"><b>Play</b><label><input type="checkbox" id="hold"> Hold note</label><span class="note" style="margin:0">Tap keys, or use A W S E D F T G Y H U J K on your keyboard.</span></div>
+  <div id="keys" role="group" aria-label="Keyboard"></div>
+</div>
+
+<div class="panel">
+  <p class="cap"><b>Spectrum</b><span>40 Hz to 20 kHz, log scale. Grass between the harmonics is aliasing.</span></p>
+  <canvas id="spec" width="900" height="340"></canvas>
+  <p class="cap" style="margin-top:12px"><b>Waveform</b><span>Flat tops mean the stages are saturating.</span></p>
+  <canvas id="scope" width="900" height="340"></canvas>
+</div>
+
+<div class="panel">
+  <b>What to try</b>
+  <p class="note">1. Hold a low note and switch between naive and PolyBLEP: the noise floor between harmonics drops.<br>
+  2. Set resonance to 4.2 with Ladder on and pull the cutoff down: the filter rings at its own pitch with nothing feeding it.<br>
+  3. Switch to Ideal: resonance stops at 3.9 to stay stable, drive no longer matters, and the waveform never flattens.<br>
+  Caveat: this filter reads its feedback from the previous sample (with 2× oversampling to soften the error). Production models solve that loop exactly.</p>
+</div>
+</main>
+
+<script>
+function makeDSP(sr){
+  const p={osc:1,mode:1,cut:700,res:3.2,drv:3,env:.6,freq:130.81,gate:0};
+  let ph=0,e=0,amp=0,y=[0,0,0,0];
+  const tanh=Math.tanh;
+  function blep(t,dt){
+    if(t<dt){t/=dt;return t+t-t*t-1}
+    if(t>1-dt){t=(t-1)/dt;return t*t+t+t+1}
+    return 0;
+  }
+  return {
+    set:function(o){for(const k in o)p[k]=o[k]},
+    run:function(out){
+      const dt=p.freq/sr,m=p.mode,k=m?p.res:Math.min(p.res,3.9),dr=m?p.drv:1;
+      for(let n=0;n<out.length;n++){
+        let s=2*ph-1;
+        if(p.osc)s-=blep(ph,dt);
+        ph+=dt;if(ph>=1)ph-=1;
+        if(p.gate)e+=(1-e)*.004;else e*=1-1/(sr*.35);
+        amp+=((p.gate?1:0)-amp)*(p.gate?.003:.0008);
+        const fc=Math.min(p.cut*(1+p.env*6*e),sr*.45);
+        const g=1-Math.exp(-Math.PI*fc/sr);
+        for(let j=0;j<2;j++){
+          let u=s*dr-k*y[3];
+          let x=m?tanh(u):u;
+          for(let i=0;i<4;i++){
+            const ty=m?tanh(y[i]):y[i];
+            y[i]+=g*(x-ty);
+            x=m?tanh(y[i]):y[i];
+          }
+        }
+        if(!isFinite(y[3])){y=[0,0,0,0]}
+        const v=y[3]*amp*(m?.7:.5/Math.max(1,k*.5));
+        out[n]=v>1?1:v<-1?-1:v;
+      }
+    }
+  };
+}
+
+const $=id=>document.getElementById(id);
+let ctx,node,an,fall,dspLocal,params={osc:1,mode:1,cut:700,res:3.2,drv:3,env:.6,freq:130.81,gate:0};
+function send(o){Object.assign(params,o);if(node&&node.port)node.port.postMessage(o);else if(dspLocal)dspLocal.set(o)}
+
+async function start(){
+  if(ctx){ctx.resume();return}
+  ctx=new (window.AudioContext||window.webkitAudioContext)();
+  an=ctx.createAnalyser();an.fftSize=4096;an.smoothingTimeConstant=.7;
+  const out=ctx.createGain();out.gain.value=.6;
+  try{
+    const code=`const makeDSP=${makeDSP.toString()};
+class P extends AudioWorkletProcessor{constructor(){super();this.d=makeDSP(sampleRate);this.port.onmessage=e=>this.d.set(e.data)}process(i,o){this.d.run(o[0][0]);return true}}
+registerProcessor('va',P);`;
+    const url=URL.createObjectURL(new Blob([code],{type:'application/javascript'}));
+    await ctx.audioWorklet.addModule(url);
+    node=new AudioWorkletNode(ctx,'va',{numberOfInputs:0,outputChannelCount:[1]});
+    node.port.postMessage(params);
+  }catch(err){
+    dspLocal=makeDSP(ctx.sampleRate);dspLocal.set(params);
+    node=ctx.createScriptProcessor(1024,0,1);
+    node.onaudioprocess=ev=>dspLocal.run(ev.outputBuffer.getChannelData(0));
+  }
+  node.connect(an);an.connect(out);out.connect(ctx.destination);
+  $('start').hidden=true;
+  draw();
+}
+$('start').addEventListener('click',start);
+
+/* controls */
+const cutHz=v=>40*Math.pow(200,v/1000);
+function bind(){
+  $('cut').oninput=()=>{const f=cutHz(+$('cut').value);$('oc').textContent=Math.round(f)+' Hz';send({cut:f})};
+  $('res').oninput=()=>{const v=+$('res').value;$('or').textContent=v.toFixed(2)+(v>=4?' (oscillates)':'');send({res:v})};
+  $('drv').oninput=()=>{const v=+$('drv').value;$('od').textContent=v.toFixed(1)+'×';send({drv:v})};
+  $('env').oninput=()=>{const v=+$('env').value;$('oe').textContent=Math.round(v*100)+'%';send({env:v})};
+  ['cut','res','drv','env'].forEach(i=>$(i).oninput());
+  for(const [seg,key] of [['segOsc','osc'],['segFil','mode']]){
+    const bs=$(seg).querySelectorAll('button');
+    bs.forEach(b=>b.onclick=()=>{bs.forEach(x=>x.setAttribute('aria-pressed',x===b));send({[key]:+b.dataset.v})});
+  }
+}
+bind();
+
+/* keyboard */
+const names=['C','C♯','D','D♯','E','F','F♯','G','G♯','A','A♯','B','C'];
+const keyMap='awsedftgyhujk';
+const held=new Set();
+function gate(){send({gate:held.size||$('hold').checked?1:0})}
+const kb=$('keys');
+names.forEach((nm,i)=>{
+  const b=document.createElement('button');b.type='button';b.textContent=nm;
+  if(nm.includes('♯'))b.className='sh';
+  const f=130.81*Math.pow(2,i/12);
+  const down=()=>{start();held.add(i);b.classList.add('on');send({freq:f,gate:1})};
+  const up=()=>{held.delete(i);b.classList.remove('on');gate()};
+  b.addEventListener('pointerdown',e=>{e.preventDefault();down()});
+  b.addEventListener('pointerup',up);b.addEventListener('pointerleave',up);b.addEventListener('pointercancel',up);
+  b._d=down;b._u=up;kb.appendChild(b);
+});
+addEventListener('keydown',e=>{if(e.repeat||e.metaKey||e.ctrlKey)return;const i=keyMap.indexOf(e.key.toLowerCase());if(i>-1)kb.children[i]._d()});
+addEventListener('keyup',e=>{const i=keyMap.indexOf(e.key.toLowerCase());if(i>-1)kb.children[i]._u()});
+$('hold').onchange=()=>{start();gate()};
+
+/* drawing */
+function css(n){return getComputedStyle(document.documentElement).getPropertyValue(n).trim()}
+const sc=$('spec').getContext('2d'),oc=$('scope').getContext('2d');
+function grid(c,w,h){c.strokeStyle=css('--grid');c.lineWidth=1;c.beginPath();for(let i=1;i<4;i++){c.moveTo(0,h*i/4);c.lineTo(w,h*i/4)}c.stroke()}
+function draw(){
+  requestAnimationFrame(draw);
+  const W=900,H=340,N=an.frequencyBinCount,fd=new Float32Array(N);
+  an.getFloatFrequencyData(fd);
+  sc.clearRect(0,0,W,H);grid(sc,W,H);
+  sc.fillStyle=css('--dim');sc.font='20px sans-serif';
+  [100,1000,10000].forEach(f=>{const x=W*Math.log(f/40)/Math.log(500);sc.fillText(f>=1000?f/1000+'k':f,x+4,H-8);sc.fillRect(x,0,1,H)});
+  sc.strokeStyle=css('--a');sc.lineWidth=2.5;sc.beginPath();
+  const bw=ctx.sampleRate/an.fftSize;
+  for(let x=0;x<W;x++){
+    const f=40*Math.pow(500,x/W),i=Math.min(N-1,Math.round(f/bw));
+    const y=H*(1-(Math.max(-100,Math.min(0,fd[i]))+100)/100);
+    x?sc.lineTo(x,y):sc.moveTo(x,y);
+  }
+  sc.stroke();
+  const td=new Float32Array(2048);an.getFloatTimeDomainData(td);
+  let s=0;for(let i=1;i<1024;i++){if(td[i-1]<0&&td[i]>=0){s=i;break}}
+  oc.clearRect(0,0,W,H);grid(oc,W,H);
+  oc.strokeStyle=css('--b');oc.lineWidth=2.5;oc.beginPath();
+  for(let x=0;x<W;x++){const v=td[s+Math.floor(x*1000/W)]||0;const y=H/2-v*H*.45;x?oc.lineTo(x,y):oc.moveTo(x,y)}
+  oc.stroke();
+}
+</script>
+</body>
+</html>
